@@ -428,3 +428,4 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - 외부 데이터: NightReID(동의서 → zhaoyuxuan@whu.edu.cn), MSMT17(RELEASE_AGREEMENT-MSMT17.pdf → slzhang.jdl@pku.edu.cn). 사용자 신청 대기.
 - MSMT17(11/2): Kaggle 사본 → `data/raw/msmt17/MSMT17_V1`, `vastreid.data.list_msmt`. `tools/finetune.py --online --msmt` → `weights/osnet_x1_0_vast_lowlight_ft_online_msmt.pth`, `results/finetune_msmt.csv`. `tools/eval_msmt.py` → `results/eval_msmt.csv`, `tools/eval_shift.py` 갱신. 색 틀어짐 36.9 → 56.8, Market 점수는 소폭 하락. 데모는 아직 고정 합성 모델.
 - 최종 모델 데모 교체(11/2): 백본 `backbone=ftm|ft|base`(기본 ftm, `osnet_x1_0-ftmsmt`). `results/kreciprocal_ftmsmt.csv`: Extreme 82.2 / 77.2, Low 90.7 / 85.5. 벤치마크 카드·최종 행·실패 원인(FTM+CSLS) 반영.
+- 최종 모델 24 에폭(11/2): `weights/osnet_x1_0_vast_lowlight_ft_online_msmt_24.pth`, 특징 `osnet_x1_0-ftmsmt24`, `results/{finetune_msmt24,hubness_ftmsmt24*,kreciprocal_ftmsmt24}.csv`. 조합 Extreme 83.0 / 77.9, Low 90.8 / 85.6. 데모 기본(ftm).

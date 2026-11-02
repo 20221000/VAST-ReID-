@@ -33,7 +33,7 @@ ATTRS = ["upper_color", "lower_color", "sleeve", "lower_type", "bag", "hat"]
 CAUSES = ["distractor", "hub", "similar", "other"]
 
 
-BASE, FT, FTM = "osnet_x1_0", "osnet_x1_0-ft", "osnet_x1_0-ftmsmt"
+BASE, FT, FTM = "osnet_x1_0", "osnet_x1_0-ft", "osnet_x1_0-ftmsmt24"
 
 
 def feats(level, split, feat, prefix=BASE):

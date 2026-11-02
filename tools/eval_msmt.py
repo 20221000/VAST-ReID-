@@ -31,7 +31,8 @@ OUT = ROOT / "data/vast_msmt"
 MODELS = {"사전학습 (Market)": "weights/osnet_x1_0_market1501.pth",
           "미세조정 고정 합성": "weights/osnet_x1_0_vast_lowlight_ft.pth",
           "미세조정 온라인 합성": "weights/osnet_x1_0_vast_lowlight_ft_online.pth",
-          "미세조정 온라인 + MSMT17 학습*": "weights/osnet_x1_0_vast_lowlight_ft_online_msmt.pth"}
+          "미세조정 온라인 + MSMT17 학습*": "weights/osnet_x1_0_vast_lowlight_ft_online_msmt.pth",
+          "최종 + 12 에폭 추가*": "weights/osnet_x1_0_vast_lowlight_ft_online_msmt_24.pth"}
 
 
 def synth_queries(items, level, cfg):

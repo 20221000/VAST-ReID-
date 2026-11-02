@@ -26,7 +26,7 @@ VALUE_KO = {"black": "검정", "white": "흰색", "red": "빨강", "purple": "�
 PERSONS = {int(k): v for k, v in json.loads(
     (ROOT / "annotations/person_attributes.json").read_text(encoding="utf-8"))["persons"].items()}
 N_SAMPLES = 24
-BASE, FT, FTM = "osnet_x1_0", "osnet_x1_0-ft", "osnet_x1_0-ftmsmt"  # 특징 캐시 이름
+BASE, FT, FTM = "osnet_x1_0", "osnet_x1_0-ft", "osnet_x1_0-ftmsmt24"  # 특징 캐시 이름 (최종: 12 + 12 에폭)
 # 백본: base 사전학습 / ft Market 저조도 미세조정 / ftm Market + MSMT17 온라인 합성 미세조정(최종, 데모 기본)
 BACKBONES = {"base": BASE, "ft": FT, "ftm": FTM}
 BACKBONE_LABEL = {"base": "사전학습 OSNet", "ft": "미세조정 OSNet (Market)", "ftm": "최종 OSNet (Market + MSMT17)"}
@@ -126,8 +126,8 @@ def _agreement(choices: dict, gp: dict) -> np.ndarray | None:
 
 _HUB_CSV = {(BASE, "none"): "hubness_wide.csv", (BASE, "adabn"): "hubness_adabn.csv",
             (FT, "none"): "hubness_ft_pft.csv", (FT, "adabn"): "hubness_ft_adabn_pft.csv",
-            (FTM, "none"): "hubness_ftmsmt.csv", (FTM, "adabn"): "hubness_ftmsmt_adabn.csv"}
-_KR_CSV = {BASE: "kreciprocal.csv", FT: "kreciprocal_ft_pft.csv", FTM: "kreciprocal_ftmsmt.csv"}
+            (FTM, "none"): "hubness_ftmsmt24.csv", (FTM, "adabn"): "hubness_ftmsmt24_adabn.csv"}
+_KR_CSV = {BASE: "kreciprocal.csv", FT: "kreciprocal_ft_pft.csv", FTM: "kreciprocal_ftmsmt24.csv"}
 
 
 @lru_cache(maxsize=None)
@@ -358,7 +358,7 @@ def bench() -> dict:
     base, wide, ada = _csv("baseline.csv"), _csv("hubness_wide.csv"), _csv("hubness_adabn.csv")
     enh2, krc = _csv("enhance_v2.csv"), _csv("kreciprocal.csv")
     ft, krf = _csv("finetune.csv"), _csv("kreciprocal_ft_pft.csv")  # Market만 미세조정 (결합 속성 분류기)
-    ftm, krm = _csv("finetune_msmt.csv"), _csv("kreciprocal_ftmsmt.csv")  # 최종 모델 (Market + MSMT17)
+    ftm, krm = _csv("finetune_msmt24.csv"), _csv("kreciprocal_ftmsmt24.csv")  # 최종 모델 (Market + MSMT17, 24 에폭)
 
     def triple(rows, method, extra=None):
         out = {}
@@ -395,7 +395,7 @@ def bench() -> dict:
                      **triple(krf, "kr+csls+witness-probe", {"feat": "none"}), "note": "AdaBN 없음"})
     if ftm:
         rows.append({"name": "최종 모델 (Market + MSMT17 미세조정)", **triple(ftm, "cosine", {"feat": "none"}),
-                     "note": "온라인 합성 · 처음 보는 조명에 강함"})
+                     "note": "온라인 합성 24 에폭 · 처음 보는 조명에 강함"})
     if krm:
         rows.append({"name": "최종 모델 + CSLS + 재순위화 + 목격자 속성",
                      **triple(krm, "kr+csls+witness-probe", {"feat": "none"}), "note": "데모 기본"})

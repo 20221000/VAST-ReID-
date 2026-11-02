@@ -143,6 +143,9 @@ def train(args):
     dl = torch.utils.data.DataLoader(ds, batch_size=args.batch, shuffle=True, num_workers=8, pin_memory=True,
                                      drop_last=True, persistent_workers=True)
     model = build(n_cls)
+    if args.init:  # 이어서 학습: 이전 미세조정 가중치(분류기 포함)에서 시작
+        model.load_state_dict(torch.load(args.init, map_location="cpu", weights_only=True), strict=True)
+        print(f"[ft] init from {args.init}", flush=True)
     acc0 = classifier_acc(model, dl)
     print(f"[ft] {'online ' if args.online else ''}{len(ds)} imgs/epoch, {n_cls} ids, 시작 시점 분류 정확도(분류기 매핑 확인용) {acc0*100:.1f}%", flush=True)
     head = [p for n, p in model.named_parameters() if n.startswith("classifier")]
@@ -245,6 +248,7 @@ def main():
     ap.add_argument("--extract-only", action="store_true")
     ap.add_argument("--no-extract", action="store_true", help="학습만 (샘플 실행용)")
     ap.add_argument("--online", action="store_true", help="온라인 저조도 합성 (매번 새 노출·노이즈)")
+    ap.add_argument("--init", type=Path, default=None, help="이어서 학습할 미세조정 가중치")
     ap.add_argument("--msmt", action="store_true", help="MSMT17 train 추가 (data/raw/msmt17, --online 필요)")
     ap.add_argument("--prefix", default=PREFIX, help="특징 캐시 이름")
     ap.add_argument("--csv", type=Path, default=ROOT / "results/finetune.csv")
