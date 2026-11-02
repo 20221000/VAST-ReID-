@@ -195,6 +195,9 @@ BoT-SORT의 외형 특징은 우리 OSNet(Market-1501 사전학습)으로 직접
 - **Extreme에서는 검출이 무너집니다** (DetA 40.4 → 7.7). 트래킹 성능의 병목은 트래커가 아니라 검출입니다.
 - 남은 검출을 연결하는 능력(AssA)은 외형 특징이 도움이 됩니다: ByteTrack 31.2 → BoT-SORT+OSNet 37.9 → **AdaBN 40.3**, ID 전환 43 → 34.
 - Normal에서 AdaBN 모델은 원래 모델과 같으므로 표에서 생략했습니다.
+- **YOLO에도 AdaBN을 적용하면 오히려 나빠졌습니다** (`results/tracking_yolo_adabn.csv`, Extreme HOTA 17.0 → 13.0, Low 43.8 → 33.8).
+  적응용으로 쓴 MOT17-11(실내)과 평가 시퀀스(야외)의 장면이 달라 BN 통계에 장면 차이까지 섞였기 때문입니다.
+  ReID에서 AdaBN이 효과가 컸던 것은 Market의 train과 test가 같은 장소·같은 카메라였기 때문입니다.
 
 ---
 
@@ -252,7 +255,8 @@ tools/        실행 스크립트 (합성, 평가, 속성, 재순위화, hubness
 vastreid/     공용 모듈 (데이터, 지표, 특징 추출, 개선 전처리, CLIP 속성, LLM 래퍼)
 annotations/  ID별 속성 6개 + 캡션 (person_attributes.json)
 results/      실험 결과 CSV
-demo/         Gradio 데모
+demo/         Gradio 데모 (로컬)
+space/        Hugging Face Spaces 공개판 (numpy만 사용, 데이터 팩은 tools/build_space.py로 생성)
 docs/         개발 일지(DEVLOG.md), 그림
 ```
 
@@ -265,6 +269,7 @@ docs/         개발 일지(DEVLOG.md), 그림
 - 저조도는 합성입니다. 실제 야간 CCTV는 카메라 내부에서 노이즈를 제거하므로, 합성 노이즈가 실제보다 거칠 수 있습니다.
 - **AdaBN 효과는 과대평가됐을 수 있습니다.** 합성 저조도는 이미지 전체에 같은 방식으로 적용된 변화라, 정규화 통계를 다시 맞추는 AdaBN과 특히 잘 맞습니다. 실제 야간 영상은 조명이 고르지 않고(가로등, 그림자) 카메라마다 처리 방식이 달라 효과가 작을 수 있습니다.
 - Extreme 등급은 현재 설정에서 대부분의 방법이 무작위 수준에 가까워, 합성 강도 재조정을 검토 중입니다.
+- AdaBN은 적응용 이미지가 평가 환경과 조도 외에는 같아야 효과가 있습니다 (YOLO AdaBN 실패 사례).
 - λ, β 검증에 쓴 train 이미지는 OSNet이 학습한 이미지라 검증 점수가 과대평가됩니다(보수적인 λ 선택 쪽으로 치우침).
 - 비전 LLM 실험은 50명 샘플이라 오차 범위가 큽니다.
 

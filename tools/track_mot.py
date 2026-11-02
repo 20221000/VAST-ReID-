@@ -31,13 +31,14 @@ TRACKERS = ["bytetrack", "botsort-osnet", "botsort-osnet-adabn"]
 
 
 # ------------------------------------------------------------------ 검출
-def detect(data: Path, level: str, seq: str, model_name: str, imgsz: int, conf: float, limit: int | None):
-    cp = ROOT / f"outputs/mot_dets/{Path(model_name).stem}/{level}/{seq}.npy"
+def detect(data: Path, level: str, seq: str, model_name: str, imgsz: int, conf: float, limit: int | None,
+           yolo=None, cache_name: str | None = None):
+    cp = ROOT / f"outputs/mot_dets/{cache_name or Path(model_name).stem}/{level}/{seq}.npy"
     frames = sorted((data / level / seq / "img1").glob("*.jpg"))[:limit]
     if cp.exists() and limit is None:
         return np.load(cp), frames
     from ultralytics import YOLO
-    yolo = YOLO(model_name)
+    yolo = yolo or YOLO(model_name)
     rows, i = [], 0
     # 경로 목록을 한 번에 넘기면 전체가 하나의 batch가 되어 VRAM 초과 → 16장씩 나눠 검출
     for s in range(0, len(frames), 16):
@@ -52,6 +53,29 @@ def detect(data: Path, level: str, seq: str, model_name: str, imgsz: int, conf: 
         cp.parent.mkdir(parents=True, exist_ok=True)
         np.save(cp, dets)
     return dets, frames
+
+
+@torch.no_grad()
+def yolo_adabn(model_name: str, frame_dir: Path, imgsz: int, step: int = 2):
+    """YOLO의 BatchNorm 통계만 frame_dir의 프레임(라벨 미사용)으로 재추정. 예측 시 Conv-BN이 합쳐지기 전에 수행."""
+    from ultralytics import YOLO
+    from ultralytics.data.augment import LetterBox
+    yolo = YOLO(model_name)
+    net = yolo.model.to(DEV).float().eval()
+    bns = [m for m in net.modules() if isinstance(m, torch.nn.modules.batchnorm._BatchNorm)]
+    if not bns:
+        raise RuntimeError("BN이 없음 (이미 fuse된 모델)")
+    for bn in bns:
+        bn.reset_running_stats()
+        bn.momentum = None
+        bn.train()
+    lb = LetterBox(new_shape=imgsz, auto=True, stride=32)  # ultralytics 예측과 같은 전처리
+    frames = sorted(frame_dir.glob("*.jpg"))[::step]
+    for s in range(0, len(frames), 8):
+        x = np.stack([lb(image=cv2.imread(str(f)))[..., ::-1].transpose(2, 0, 1) for f in frames[s:s + 8]])
+        net(torch.from_numpy(np.ascontiguousarray(x)).to(DEV).float() / 255.0)
+    net.eval()
+    return yolo, len(bns), len(frames)
 
 
 # ------------------------------------------------------------------ 외형 특징
@@ -151,18 +175,32 @@ def main():
     ap.add_argument("--limit-frames", type=int, default=None, help="샘플 테스트 (평가 생략)")
     ap.add_argument("--eval-only", action="store_true", help="저장된 트래킹 결과로 TrackEval 평가만 실행")
     ap.add_argument("--no-eval", action="store_true", help="트래킹만 하고 평가 생략")
-    ap.add_argument("--out", type=Path, default=ROOT / "results/tracking.csv")
+    ap.add_argument("--out", type=Path, default=None, help="기본: results/tracking.csv (--det-adabn: tracking_yolo_adabn.csv)")
+    ap.add_argument("--det-adabn", action="store_true",
+                    help="YOLO BN 통계를 조도별로 재추정 (평가에 쓰지 않는 --adapt-seq 프레임, 라벨 미사용)")
+    ap.add_argument("--adapt-data", type=Path, default=ROOT / "data/vast_mot_adapt")
+    ap.add_argument("--adapt-seq", default="MOT17-11-FRCNN")
     args = ap.parse_args()
 
     t0 = time.time()
+    args.out = args.out or ROOT / ("results/tracking_yolo_adabn.csv" if args.det_adabn else "results/tracking.csv")
+    assert args.adapt_seq not in args.seqs, "적응용 시퀀스는 평가 시퀀스와 달라야 함"
     need_reid = any("botsort" in t for t in args.trackers) and not args.eval_only
     base, adapted = reid_models(args.levels) if need_reid else (None, {})
     rows = []
     for lv in args.levels:
-        trk_root = ROOT / f"outputs/mot_results/{lv}"
+        trk_root = ROOT / f"outputs/mot_results{'_yoloadabn' if args.det_adabn else ''}/{lv}"
+        yolo, cache_name = None, None
+        if args.det_adabn and not args.eval_only:
+            t = time.time()
+            yolo, n_bn, n_fr = yolo_adabn(args.det_model, args.adapt_data / lv / args.adapt_seq / "img1", args.imgsz)
+            cache_name = f"{Path(args.det_model).stem}-adabn-{lv}"
+            print(f"  [yolo-adabn] {lv}: BN {n_bn}개 재추정 ({args.adapt_seq} {n_fr} frames, {time.time() - t:.0f}s)",
+                  flush=True)
         for seq in ([] if args.eval_only else args.seqs):
             t = time.time()
-            dets, frames = detect(args.data, lv, seq, args.det_model, args.imgsz, args.conf, args.limit_frames)
+            dets, frames = detect(args.data, lv, seq, args.det_model, args.imgsz, args.conf, args.limit_frames,
+                                  yolo, cache_name)
             print(f"  [det] {lv}/{seq}: {len(frames)} frames, {len(dets)} dets ({len(dets) / max(len(frames), 1):.1f}/frame) "
                   f"{time.time() - t:.0f}s  GPU {gpu_temp()}°C", flush=True)
             for name in args.trackers:
@@ -174,7 +212,7 @@ def main():
             continue
         res = trackeval_eval(args.data / lv, trk_root, args.trackers, args.seqs)
         for name, m in res.items():
-            rows.append({"level": lv, "tracker": name, **{k: round(v, 4) if isinstance(v, float) else v
+            rows.append({"level": lv, "detector": "yolo11m+adabn" if args.det_adabn else "yolo11m", "tracker": name, **{k: round(v, 4) if isinstance(v, float) else v
                                                           for k, v in m.items()}})
             print(f"  [{lv:7s}] {name:22s} HOTA {m['HOTA']*100:5.1f}  IDF1 {m['IDF1']*100:5.1f}  "
                   f"MOTA {m['MOTA']*100:5.1f}  AssA {m['AssA']*100:5.1f}  IDSW {m['IDSW']}", flush=True)

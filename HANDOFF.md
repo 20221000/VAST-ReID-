@@ -394,3 +394,8 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - 패키지: ultralytics 8.4, boxmot 26(외형 특징은 `Detections(embeddings=...)`로 전달), TrackEval(공식 레포 설치, `np.float` 별칭 패치 포함)
 - `results/tracking.csv`: Low는 HOTA 45.9 → 43.7로 거의 유지, Extreme은 검출 붕괴(DetA 7.7). AssA는 ByteTrack 31.2 → BoT-SORT+OSNet 37.9 → AdaBN 40.3.
 - 다음: (선택) YOLO AdaBN, HF Spaces 공개판, 발표 자료, 노션 기획서 반영
+
+### YOLO AdaBN (실패) / HF Spaces (11/2)
+- `tools/track_mot.py --det-adabn` (적응용 `data/vast_mot_adapt/{level}/MOT17-11-FRCNN`) → `results/tracking_yolo_adabn.csv`: 모든 조도에서 악화 (장면 차이 때문). DEVLOG에 부정적 결과로 기록.
+- `tools/build_space.py` → `space/data/` (git 제외), `space/app.py` (numpy 전용 Gradio). HF 계정 `krskulk`, 토큰은 `.env`의 HF_TOKEN.
+- **Gradio Space는 PRO 필요(402)** → 사용자 결정 대기: A 정적 HTML/JS Space(권장, 무료) / B Gradio-Lite / C PRO 구독. 공개 범위도 결정 필요(비공개 권장).

@@ -1,0 +1,7 @@
+level,detector,tracker,HOTA,DetA,AssA,IDF1,MOTA,IDSW
+normal,yolo11m+adabn,bytetrack,0.4313,0.3935,0.48,0.4928,0.3401,200
+normal,yolo11m+adabn,botsort-osnet-adabn,0.4513,0.387,0.5315,0.536,0.3633,159
+low,yolo11m+adabn,bytetrack,0.3283,0.2944,0.372,0.4081,0.2923,268
+low,yolo11m+adabn,botsort-osnet-adabn,0.3378,0.2798,0.412,0.4212,0.2894,203
+extreme,yolo11m+adabn,bytetrack,0.1322,0.0716,0.2451,0.119,0.076,140
+extreme,yolo11m+adabn,botsort-osnet-adabn,0.1298,0.0641,0.2631,0.1102,0.0698,132
