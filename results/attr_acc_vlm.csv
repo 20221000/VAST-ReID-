@@ -1,0 +1,13 @@
+model,level,n_images,upper_color,lower_color,sleeve,lower_type,bag,hat,mean_acc,unknown_answers
+clip_linear_probe,normal,50,0.5652,0.6458,0.92,0.84,0.74,1.0,0.7852,0
+clip_linear_probe,low,50,0.6304,0.6875,0.92,0.82,0.66,1.0,0.7863,0
+clip_linear_probe,extreme,50,0.3696,0.4792,0.92,0.54,0.52,1.0,0.6381,0
+clip_zero_shot,normal,50,0.413,0.2708,0.88,0.56,0.42,0.6,0.524,0
+clip_zero_shot,low,50,0.5,0.2917,0.84,0.52,0.24,0.28,0.4453,0
+clip_zero_shot,extreme,50,0.2609,0.25,0.44,0.22,0.1,0.0,0.2118,0
+openai:gpt-4.1-mini,normal,50,0.7826,0.7708,0.94,0.78,0.74,0.98,0.8322,13
+openai:gpt-4.1-mini,low,50,0.6087,0.6042,0.7,0.7,0.62,0.96,0.6988,21
+openai:gpt-4.1-mini,extreme,50,0.1957,0.3333,0.08,0.3,0.34,0.7,0.3248,89
+xai:grok-4.20-0309-non-reasoning,normal,50,0.8043,0.7708,1.0,0.9,0.68,0.98,0.8559,2
+xai:grok-4.20-0309-non-reasoning,low,50,0.6957,0.6667,0.8,0.82,0.62,0.94,0.7571,7
+xai:grok-4.20-0309-non-reasoning,extreme,50,0.2826,0.4375,0.08,0.2,0.42,0.78,0.3667,68

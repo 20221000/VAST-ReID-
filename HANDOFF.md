@@ -345,3 +345,9 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 ### A: 선형 분류기 속성 (11/2)
 - `tools/attr_probe.py` (CLIP 특징 + 로지스틱 회귀, ID 기준 5-fold 교차 예측) → `outputs/attr_probs/probe__*.npz`, `results/attr_acc_probe.csv` (평균 정확도 78.3 / 75.3 / 65.1)
 - `tools/rerank.py --attr-source probe | witness-probe` → low→normal R1 **29.6 / 34.3** (외형만 23.0). λ가 0.5(범위 끝)에서 선택됨 → 범위 확장 검토.
+
+### B: 비전 LLM 저조도 속성 실험 (11/2)
+- `tools/vlm_attributes.py` → `results/attr_acc_vlm.csv` (50명 × 3조도, 모델당 150회, 캐시는 `outputs/api_cache/`)
+- 평균 정확도 normal/low/extreme: Grok 85.6/75.7/36.7, GPT 83.2/69.9/32.5, 선형 분류기 78.5/78.6/63.8, zero-shot 52.4/44.5/21.2
+- API 누적 사용량: 약 314회, 약 12만 토큰 (`outputs/api_usage.csv`)
+- **다음: C. Gradio 데모** (이미지 검색 / 텍스트 검색 / 벤치마크 3탭)
