@@ -37,7 +37,8 @@ SHIFTS = {
 }
 MODELS = {"osnet_x1_0 (사전학습)": "weights/osnet_x1_0_market1501.pth",
           "미세조정 (고정 합성)": "weights/osnet_x1_0_vast_lowlight_ft.pth",
-          "미세조정 (온라인 합성)": "weights/osnet_x1_0_vast_lowlight_ft_online.pth"}
+          "미세조정 (온라인 합성)": "weights/osnet_x1_0_vast_lowlight_ft_online.pth",
+          "미세조정 (온라인 + MSMT17)": "weights/osnet_x1_0_vast_lowlight_ft_online_msmt.pth"}
 
 
 def synth(shift: str, cfg: dict) -> list[Path]:
@@ -62,6 +63,8 @@ def main():
     print("  평균 밝기", {s: round(v, 3) for s, v in lum.items()}, flush=True)
     rows = []
     for name, w in MODELS.items():
+        if not (ROOT / w).exists():
+            continue
         m = load_model("osnet_x1_0", ROOT / w, DEV)
         gf, _ = extract(m, [x.path for x in gi], DEV)
         gf = torch.nn.functional.normalize(gf.float().to(DEV), dim=1)

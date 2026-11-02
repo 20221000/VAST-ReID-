@@ -33,7 +33,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from vastreid.data import list_split  # noqa: E402
+from vastreid.data import list_msmt, list_split  # noqa: E402
 from vastreid.metrics import evaluate_fast  # noqa: E402
 from vastreid.reid import MEAN, STD, extract, gpu_temp  # noqa: E402
 
@@ -88,11 +88,19 @@ class TrainDS(torch.utils.data.Dataset):
 
 
 def build(num_classes=751):
+    """Market 학습 가중치에서 출발. num_classes > 751(MSMT17 추가)이면 분류기 앞 751행만 Market 값으로 채우고 나머지는 새로 초기화."""
     import torchreid
     m = torchreid.models.build_model("osnet_x1_0", num_classes=num_classes, loss="softmax", pretrained=False)
     sd = torch.load(ROOT / "weights/osnet_x1_0_market1501.pth", map_location="cpu", weights_only=True)
     sd = {k.removeprefix("module."): v for k, v in sd.get("state_dict", sd).items()}
-    m.load_state_dict(sd, strict=True)
+    if num_classes == 751:
+        m.load_state_dict(sd, strict=True)
+    else:
+        own = m.state_dict()
+        for k in ("classifier.weight", "classifier.bias"):
+            own[k][:751] = sd.pop(k)
+        sd.update({k: own[k] for k in ("classifier.weight", "classifier.bias")})
+        m.load_state_dict(sd, strict=True)
     return m.to(DEV)
 
 
@@ -122,13 +130,21 @@ def train(args):
     uniq = sorted(set(pids))
     label = {p: i for i, p in enumerate(uniq)}  # torchreid과 같은 오름차순 relabel
     labels = [label[p] for p in pids]
+    n_cls = len(uniq)
+    if args.msmt:  # MSMT17 train(1,041명)을 Market 뒤 라벨로 추가. 원본만 있으므로 온라인 합성 필수
+        assert args.online, "--msmt는 --online과 함께"
+        mi = list_msmt("train")
+        mu = {p: n_cls + i for i, p in enumerate(sorted({x.pid for x in mi}))}
+        items += mi
+        labels += [mu[x.pid] for x in mi]
+        n_cls += len(mu)
     cfg = yaml.safe_load((ROOT / "configs/lowlight.yaml").read_text(encoding="utf-8"))
     ds = TrainDS(items, labels, LEVELS if args.online else None, cfg)
     dl = torch.utils.data.DataLoader(ds, batch_size=args.batch, shuffle=True, num_workers=8, pin_memory=True,
                                      drop_last=True, persistent_workers=True)
-    model = build(len(uniq))
+    model = build(n_cls)
     acc0 = classifier_acc(model, dl)
-    print(f"[ft] {'online ' if args.online else ''}{len(ds)} imgs/epoch, {len(uniq)} ids, 시작 시점 분류 정확도(분류기 매핑 확인용) {acc0*100:.1f}%", flush=True)
+    print(f"[ft] {'online ' if args.online else ''}{len(ds)} imgs/epoch, {n_cls} ids, 시작 시점 분류 정확도(분류기 매핑 확인용) {acc0*100:.1f}%", flush=True)
     head = [p for n, p in model.named_parameters() if n.startswith("classifier")]
     body = [p for n, p in model.named_parameters() if not n.startswith("classifier")]
     opt = torch.optim.AdamW([{"params": body, "lr": args.lr}, {"params": head, "lr": args.lr * 10}],
@@ -229,6 +245,7 @@ def main():
     ap.add_argument("--extract-only", action="store_true")
     ap.add_argument("--no-extract", action="store_true", help="학습만 (샘플 실행용)")
     ap.add_argument("--online", action="store_true", help="온라인 저조도 합성 (매번 새 노출·노이즈)")
+    ap.add_argument("--msmt", action="store_true", help="MSMT17 train 추가 (data/raw/msmt17, --online 필요)")
     ap.add_argument("--prefix", default=PREFIX, help="특징 캐시 이름")
     ap.add_argument("--csv", type=Path, default=ROOT / "results/finetune.csv")
     args = ap.parse_args()
@@ -236,9 +253,8 @@ def main():
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     if args.extract_only:
-        model = build()
-        model.load_state_dict(torch.load(args.out, map_location="cpu", weights_only=True))
-        model.eval()
+        from vastreid.reid import load_model  # 분류기 크기와 무관하게 특징 추출용으로 로드
+        model = load_model("osnet_x1_0", args.out, DEV)
     else:
         model = train(args)
     if not args.no_extract:

@@ -38,3 +38,22 @@ def list_split(root: Path, level: str, split: str, drop_junk: bool = True) -> li
             continue
         items.append(Item(f, pid, cam))
     return items
+
+
+# ------------------------------------------------------------------ MSMT17 (V1)
+MSMT_ROOT = Path(__file__).resolve().parents[1] / "data/raw/msmt17/MSMT17_V1"
+
+
+def list_msmt(split: str, root: Path = MSMT_ROOT) -> list[Item]:
+    """MSMT17_V1 공식 목록(list_{train,val,query,gallery}.txt). 파일명 {pid}_{idx}_{cam:02d}_{날짜시간}_....jpg.
+    train은 train+val을 합쳐 씀(공식 관례). pid는 목록 파일의 라벨, camid는 0-based."""
+    names = ["train", "val"] if split == "train" else [split]
+    items = []
+    for n in names:
+        sub = "train" if n in ("train", "val") else "test"
+        for line in (root / f"list_{n}.txt").read_text().split("\n"):
+            if not line.strip():
+                continue
+            rel, pid = line.split()
+            items.append(Item(root / sub / rel, int(pid), int(Path(rel).name.split("_")[2]) - 1))
+    return items
