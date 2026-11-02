@@ -4,6 +4,9 @@
     python tools/finetune.py --epochs 2 --out weights/osnet_ft_sample.pth      # 샘플: 시간·온도 측정
     python tools/finetune.py                                                     # 본 학습 (12 에폭 고정)
     python tools/finetune.py --extract-only                                      # 특징 추출·평가만
+    python tools/finetune.py --online --prefix osnet_x1_0-ftonline \
+        --out weights/osnet_x1_0_vast_lowlight_ft_online.pth --csv results/finetune_online.csv
+        # 온라인 저조도 합성: 미리 만든 low/extreme 대신 매번 새 노출·노이즈로 합성
 
 - 학습 데이터: train split만 (751명 × 3조도 = 38,808장). query·gallery는 학습에 전혀 사용하지 않음.
 - 에폭 수는 미리 고정 (테스트 성능으로 고르지 않음). 마지막 에폭 가중치를 그대로 사용.
@@ -26,12 +29,16 @@ from pathlib import Path
 import cv2
 import numpy as np
 import torch
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from vastreid.data import list_split  # noqa: E402
 from vastreid.metrics import evaluate_fast  # noqa: E402
 from vastreid.reid import MEAN, STD, extract, gpu_temp  # noqa: E402
+
+sys.path.insert(0, str(ROOT / "tools"))
+from synthesize_lowlight import degrade, sample_params  # noqa: E402
 
 DATA = ROOT / "data/vast"
 LEVELS = ["normal", "low", "extreme"]
@@ -40,15 +47,34 @@ PREFIX = "osnet_x1_0-ft"
 
 
 class TrainDS(torch.utils.data.Dataset):
-    def __init__(self, items, labels):
-        self.items, self.labels = items, labels
+    """online=False: 미리 합성한 normal·low·extreme 파일을 그대로 읽음.
+    online=True : normal 원본만 읽고, 인덱스 구간에 따라 1/3씩 normal·low·extreme으로 **매번 새로 합성**
+                  (노출·노이즈·블러·색·JPEG를 configs/lowlight.yaml 범위에서 새로 뽑음 → 같은 저조도 사진이 반복되지 않음)."""
+
+    def __init__(self, items, labels, online_levels=None, cfg=None):
+        self.items, self.labels, self.online_levels, self.cfg = items, labels, online_levels, cfg
 
     def __len__(self):
-        return len(self.items)
+        return len(self.items) * (len(self.online_levels) if self.online_levels else 1)
+
+    def _load(self, i):
+        if not self.online_levels:
+            return cv2.imread(str(self.items[i].path)), self.labels[i]
+        n = len(self.items)
+        it, lv = self.items[i % n], self.online_levels[i // n]
+        img = cv2.imread(str(it.path))
+        if lv != "normal":
+            # random 모듈은 DataLoader가 worker마다 다른 시드를 줌 → numpy 난수도 그걸로 생성
+            rng = np.random.default_rng(random.getrandbits(64))
+            p = sample_params(self.cfg["levels"][lv], rng)
+            img, _ = degrade(img, p, rng)
+            ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, p.jpeg_quality])  # 오프라인 합성과 같은 JPEG 저장 효과
+            img = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+        return img, self.labels[i % n]
 
     def __getitem__(self, i):
-        it = self.items[i]
-        img = cv2.resize(cv2.imread(str(it.path)), (128, 256), interpolation=cv2.INTER_LINEAR)
+        img, y = self._load(i)
+        img = cv2.resize(img, (128, 256), interpolation=cv2.INTER_LINEAR)
         if random.random() < 0.5:
             img = img[:, ::-1]
         x = (img[..., ::-1].astype(np.float32) / 255.0 - MEAN) / STD
@@ -58,7 +84,7 @@ class TrainDS(torch.utils.data.Dataset):
             eh, ew = int(h * random.uniform(0.2, 0.5)), int(w * random.uniform(0.2, 0.5))
             y0, x0 = random.randint(0, h - eh), random.randint(0, w - ew)
             x[:, y0:y0 + eh, x0:x0 + ew] = torch.randn(3, eh, ew)
-        return x, self.labels[i]
+        return x, y
 
 
 def build(num_classes=751):
@@ -89,19 +115,20 @@ def classifier_acc(model, dl, n_batches=20):
 
 def train(args):
     items, pids = [], []
-    for lv in LEVELS:
+    for lv in (["normal"] if args.online else LEVELS):
         it = list_split(DATA, lv, "train")
         items += it
         pids += [x.pid for x in it]
     uniq = sorted(set(pids))
     label = {p: i for i, p in enumerate(uniq)}  # torchreid과 같은 오름차순 relabel
     labels = [label[p] for p in pids]
-    ds = TrainDS(items, labels)
+    cfg = yaml.safe_load((ROOT / "configs/lowlight.yaml").read_text(encoding="utf-8"))
+    ds = TrainDS(items, labels, LEVELS if args.online else None, cfg)
     dl = torch.utils.data.DataLoader(ds, batch_size=args.batch, shuffle=True, num_workers=8, pin_memory=True,
                                      drop_last=True, persistent_workers=True)
     model = build(len(uniq))
     acc0 = classifier_acc(model, dl)
-    print(f"[ft] {len(ds)} imgs, {len(uniq)} ids, 시작 시점 분류 정확도(분류기 매핑 확인용) {acc0*100:.1f}%", flush=True)
+    print(f"[ft] {'online ' if args.online else ''}{len(ds)} imgs/epoch, {len(uniq)} ids, 시작 시점 분류 정확도(분류기 매핑 확인용) {acc0*100:.1f}%", flush=True)
     head = [p for n, p in model.named_parameters() if n.startswith("classifier")]
     body = [p for n, p in model.named_parameters() if not n.startswith("classifier")]
     opt = torch.optim.AdamW([{"params": body, "lr": args.lr}, {"params": head, "lr": args.lr * 10}],
@@ -151,7 +178,7 @@ def adapt_bn(base, level):
     return m.eval()
 
 
-def extract_all(model):
+def extract_all(model, prefix=PREFIX):
     cache = ROOT / "outputs/features"
     models = {"none": model}
     for lv in ["low", "extreme"]:
@@ -163,13 +190,13 @@ def extract_all(model):
             for sp in ["train", "query", "gallery"]:
                 it = list_split(DATA, lv, sp)
                 f, _ = extract(m, [x.path for x in it], DEV)
-                torch.save({"n": len(it), "feats": f.cpu()}, cache / f"{PREFIX}__{tag}__{lv}__{sp}.pt")
+                torch.save({"n": len(it), "feats": f.cpu()}, cache / f"{prefix}__{tag}__{lv}__{sp}.pt")
         print(f"  [feat] {tag} done  GPU {gpu_temp()}°C", flush=True)
 
 
-def evaluate_all(out_csv):
+def evaluate_all(out_csv, prefix=PREFIX):
     def load(tag, lv, sp):
-        d = torch.load(ROOT / f"outputs/features/{PREFIX}__{tag}__{lv}__{sp}.pt", weights_only=True)
+        d = torch.load(ROOT / f"outputs/features/{prefix}__{tag}__{lv}__{sp}.pt", weights_only=True)
         return torch.nn.functional.normalize(d["feats"].float(), dim=1).to(DEV)
     rows = []
     for feat in ["none", "adabn"]:
@@ -180,7 +207,7 @@ def evaluate_all(out_csv):
             qi, gi = list_split(DATA, ql, "query"), list_split(DATA, gl, "gallery")
             r = evaluate_fast(-(load(qt, ql, "query") @ load(gt, gl, "gallery").T), [x.pid for x in qi],
                               [x.pid for x in gi], [x.camid for x in qi], [x.camid for x in gi])
-            rows.append({"model": "osnet_x1_0+lowlight_ft", "feat": feat, "method": "cosine", "protocol": proto,
+            rows.append({"model": prefix, "feat": feat, "method": "cosine", "protocol": proto,
                          "query_level": ql, "gallery_level": gl,
                          **{k: round(v, 6) if isinstance(v, float) else v for k, v in r.items()}})
             print(f"  ft {feat:5s} {proto:5s} {ql:7s}→{gl:7s} R1 {r['rank1']*100:5.1f}  mAP {r['mAP']*100:5.1f}  "
@@ -201,6 +228,9 @@ def main():
     ap.add_argument("--out", type=Path, default=ROOT / "weights/osnet_x1_0_vast_lowlight_ft.pth")
     ap.add_argument("--extract-only", action="store_true")
     ap.add_argument("--no-extract", action="store_true", help="학습만 (샘플 실행용)")
+    ap.add_argument("--online", action="store_true", help="온라인 저조도 합성 (매번 새 노출·노이즈)")
+    ap.add_argument("--prefix", default=PREFIX, help="특징 캐시 이름")
+    ap.add_argument("--csv", type=Path, default=ROOT / "results/finetune.csv")
     args = ap.parse_args()
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -212,8 +242,8 @@ def main():
     else:
         model = train(args)
     if not args.no_extract:
-        extract_all(model)
-        evaluate_all(ROOT / "results/finetune.csv")
+        extract_all(model, args.prefix)
+        evaluate_all(args.csv, args.prefix)
 
 
 if __name__ == "__main__":
