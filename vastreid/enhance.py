@@ -43,6 +43,21 @@ def clahe(bgr: np.ndarray) -> np.ndarray:
 CPU_ENHANCERS = {"gamma": adaptive_gamma, "clahe": clahe}
 
 
+# ------------------------------------------------------------------ 게이팅 / 노이즈 제거
+def mean_luma(bgr: np.ndarray) -> float:
+    """BT.709 luma 평균 (0~1). synthesize_lowlight.py 의 mean_luminance 와 같은 정의."""
+    b, g, r = (bgr[..., i].astype(np.float32) / 255.0 for i in range(3))
+    return float((0.2126 * r + 0.7152 * g + 0.0722 * b).mean())
+
+
+def nlm_denoise(bgr: np.ndarray, h: float = 10.0) -> np.ndarray:
+    """Non-Local Means 컬러 노이즈 제거 (밝기 개선 전에 적용)."""
+    return cv2.fastNlMeansDenoisingColored(bgr, None, h, h, 7, 21)
+
+
+DENOISERS = {"none": None, "nlm": nlm_denoise}
+
+
 # ------------------------------------------------------------------ Zero-DCE
 class ZeroDCE(nn.Module):
     def __init__(self, nf: int = 32):

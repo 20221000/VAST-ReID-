@@ -4,12 +4,15 @@
     python tools/evaluate.py --data data/vast --out results/baseline.csv
     python tools/evaluate.py --limit-query 300            # 샘플로 시간 측정
     python tools/evaluate.py --enhance none gamma clahe zerodce --out results/enhance.csv
+    python tools/evaluate.py --enhance gamma zerodce --gate 0.25 --denoise nlm --out results/enhance_v2.csv --append
 
 프로토콜
   same  : query·gallery 모두 같은 조도 L          (L = normal, low, extreme)
   cross : query는 조도 L, gallery는 normal       (야간 query → 주간 gallery, 실제 CCTV 상황)
 거리: torchreid Model Zoo와 동일하게 정규화하지 않은 특징의 유클리드 거리.
-개선 전처리(--enhance)는 query·gallery 모든 이미지에 동일하게 적용 (실제 시스템은 조도를 모른다고 가정).
+개선 전처리(--enhance)는 query·gallery 모든 이미지에 동일한 규칙으로 적용:
+  --gate τ    : 입력 평균 밝기(BT.709 luma) < τ 인 이미지에만 denoise·enhance 적용 (기본: 전부 적용)
+  --denoise   : 밝기 개선 전에 노이즈 제거 (none | nlm)
 """
 from __future__ import annotations
 
@@ -27,7 +30,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from vastreid.data import list_split  # noqa: E402
-from vastreid.enhance import ALL as ENHANCERS, CPU_ENHANCERS, GPU_ENHANCERS  # noqa: E402
+from vastreid.enhance import ALL as ENHANCERS, CPU_ENHANCERS, DENOISERS, GPU_ENHANCERS, mean_luma  # noqa: E402
 from vastreid.metrics import evaluate  # noqa: E402
 
 MEAN = np.array([0.485, 0.456, 0.406], np.float32)
@@ -56,34 +59,43 @@ def load_model(name: str, weights: Path, device: str):
 
 
 class ImgDS(torch.utils.data.Dataset):
-    def __init__(self, paths, size=(128, 256), cpu_enhance=None):
+    def __init__(self, paths, size=(128, 256), cpu_enhance=None, denoise=None, gate=None):
         self.paths, self.size, self.cpu_enhance = paths, size, cpu_enhance
+        self.denoise, self.gate = denoise, gate
 
     def __len__(self):
         return len(self.paths)
 
     def __getitem__(self, i):
         img = cv2.imread(str(self.paths[i]), cv2.IMREAD_COLOR)
-        if self.cpu_enhance is not None:
+        apply = self.gate is None or mean_luma(img) < self.gate
+        if apply and self.denoise is not None:
+            img = self.denoise(img)
+        if apply and self.cpu_enhance is not None:
             img = self.cpu_enhance(img)
         img = cv2.resize(img, self.size, interpolation=cv2.INTER_LINEAR)
-        return torch.from_numpy(img[..., ::-1].transpose(2, 0, 1).copy())  # RGB uint8 CHW
+        return torch.from_numpy(img[..., ::-1].transpose(2, 0, 1).copy()), apply  # RGB uint8 CHW, 적용 여부
 
 
 @torch.no_grad()
-def extract(model, paths, device, batch=256, workers=8, cpu_enhance=None, gpu_enhance=None) -> torch.Tensor:
-    dl = torch.utils.data.DataLoader(ImgDS(paths, cpu_enhance=cpu_enhance), batch_size=batch,
+def extract(model, paths, device, batch=256, workers=8, cpu_enhance=None, gpu_enhance=None,
+            denoise=None, gate=None) -> tuple[torch.Tensor, float]:
+    """특징과 개선이 적용된 이미지 비율을 반환."""
+    dl = torch.utils.data.DataLoader(ImgDS(paths, cpu_enhance=cpu_enhance, denoise=denoise, gate=gate), batch_size=batch,
                                      num_workers=workers, pin_memory=True)
     mean = torch.tensor(MEAN, device=device).view(1, 3, 1, 1)
     std = torch.tensor(STD, device=device).view(1, 3, 1, 1)
-    out = []
-    for x in dl:
+    out, n_applied = [], 0
+    for x, applied in dl:
         x = x.to(device, non_blocking=True).float() / 255.0
-        if gpu_enhance is not None:
+        applied = applied.to(device)
+        n_applied += int(applied.sum())
+        if gpu_enhance is not None and applied.any():
             # Zero-DCE는 전 해상도 32ch 활성값을 쓰므로 작은 묶음으로 나눠 VRAM 초과(WSL sysmem fallback) 방지
-            x = torch.cat([gpu_enhance(c) for c in x.split(32)])
+            sel = x[applied]
+            x[applied] = torch.cat([gpu_enhance(c) for c in sel.split(32)])
         out.append(model((x - mean) / std).float())
-    return torch.cat(out)
+    return torch.cat(out), n_applied / max(1, len(paths))
 
 
 def main():
@@ -94,6 +106,9 @@ def main():
     ap.add_argument("--levels", nargs="+", default=["normal", "low", "extreme"])
     ap.add_argument("--protocols", nargs="+", default=["same", "cross"], choices=["same", "cross"])
     ap.add_argument("--enhance", nargs="+", default=["none"], choices=ENHANCERS)
+    ap.add_argument("--gate", type=float, default=None, help="평균 밝기 < τ 인 이미지에만 개선 적용")
+    ap.add_argument("--denoise", default="none", choices=list(DENOISERS))
+    ap.add_argument("--append", action="store_true", help="기존 CSV에 행 추가")
     ap.add_argument("--limit-query", type=int, default=None, help="샘플 테스트용 query 수 제한")
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--workers", type=int, default=8)
@@ -116,15 +131,17 @@ def main():
     for enh in args.enhance:
         cpu_e = CPU_ENHANCERS.get(enh)
         gpu_e = GPU_ENHANCERS[enh](device=device) if enh in GPU_ENHANCERS else None
-        items, feats = {}, {}
+        items, feats, rate = {}, {}, {}
         for lv, sp in sorted(need):
             it = list_split(args.data, lv, sp)
             if sp == "query" and args.limit_query:
                 it = it[:args.limit_query]
             t = time.time()
-            feats[(lv, sp)] = extract(model, [x.path for x in it], device, args.batch, args.workers, cpu_e, gpu_e)
+            feats[(lv, sp)], rate[(lv, sp)] = extract(model, [x.path for x in it], device, args.batch, args.workers,
+                                                      cpu_e, gpu_e, DENOISERS[args.denoise], args.gate)
             items[(lv, sp)] = it
-            print(f"  [{enh}] feat {lv}/{sp}: {len(it)} imgs {time.time() - t:.1f}s  GPU {gpu_temp()}°C", flush=True)
+            print(f"  [{enh}] feat {lv}/{sp}: {len(it)} imgs {time.time() - t:.1f}s  "
+                  f"applied {rate[(lv, sp)]*100:.0f}%  GPU {gpu_temp()}°C", flush=True)
 
         for lv in args.levels:
             pairs = []
@@ -138,10 +155,12 @@ def main():
                 qi, gi = items[(ql, "query")], items[(gl, "gallery")]
                 r = evaluate(dist, [x.pid for x in qi], [x.pid for x in gi],
                              [x.camid for x in qi], [x.camid for x in gi])
-                rows.append({"model": args.model, "enhance": enh, "protocol": proto, "query_level": ql,
+                rows.append({"model": args.model, "enhance": enh, "denoise": args.denoise,
+                             "gate": "" if args.gate is None else args.gate, "protocol": proto, "query_level": ql,
                              "gallery_level": gl,
                              **{k: round(v, 4) if isinstance(v, float) else v for k, v in r.items()},
-                             "num_query": len(qi), "num_gallery": len(gi)})
+                             "num_query": len(qi), "num_gallery": len(gi),
+                             "q_applied": round(rate[(ql, "query")], 3), "g_applied": round(rate[(gl, "gallery")], 3)})
                 print(f"  [{enh}] {proto:5s} q={ql:7s} g={gl:7s}  R1 {r['rank1']*100:5.1f}  "
                       f"R5 {r['rank5']*100:5.1f}  mAP {r['mAP']*100:5.1f}  mINP {r['mINP']*100:5.1f}")
     print(f"[done] {time.time() - t0:.1f}s  GPU {gpu_temp()}°C")
@@ -149,9 +168,11 @@ def main():
     if args.limit_query:
         args.out = args.out.with_name(args.out.stem + "_sample.csv")
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.out, "w", newline="", encoding="utf-8") as f:
+    write_header = not (args.append and args.out.exists())
+    with open(args.out, "a" if args.append else "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
-        w.writeheader()
+        if write_header:
+            w.writeheader()
         w.writerows(rows)
     print(f"[saved] {args.out}")
 

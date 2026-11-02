@@ -77,5 +77,8 @@ python tools/synthesize_lowlight.py --src data/raw/Market-1501-v15.09.15 --out d
 
 ![low-light grid](docs/figures/lowlight_grid.jpg)
 
+## Development Log
+개발 과정의 결정, 시행착오, 실험 결과, 배운 점은 [docs/DEVLOG.md](docs/DEVLOG.md)에 기록합니다.
+
 ## Author
 - 송민호 (동양미래대학교)
