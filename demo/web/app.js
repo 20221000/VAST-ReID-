@@ -45,7 +45,7 @@ function attrsParams() {
 async function doSearch() {
   const m = $("#model").value;
   const params = { q_level: S.level, g_level: "normal", adabn: S.adabn, csls: m.includes("csls"), kr: m.includes("kr"),
-                   ft: $("#backbone").value === "ft",
+                   ft: $("#backbone").value === "ft", attr_strength: $("#attr-strength").value,
                    beta: 1.0, lam: 0.5, ...attrsParams() };
   if (S.src) Object.assign(params, { src_gallery: S.src.gidx, src_level: S.src.level, q_level: S.src.level });
   else params.sample = S.sample;
@@ -69,7 +69,8 @@ function renderSearch(r) {
   $("#kr-note").textContent = r.kr_note || "";
   $("#kr-note").classList.toggle("hidden", !r.kr_note);
   $("#r-sub").textContent = [`갤러리 ${r.gallery_size.toLocaleString()}장 (${r.g_level})`, `쿼리 ${q.level}`,
-    r.ft ? "미세조정 OSNet" : "사전학습 OSNet", model, S.adabn ? "AdaBN" : null, ...filt].filter(Boolean).join(" · ");
+    r.ft ? "미세조정 OSNet" : "사전학습 OSNet", model, S.adabn ? "AdaBN" : null, ...filt,
+    filt.length ? `진술 가중치 ${r.attr_weight}/속성${r.attr_strength === "auto" ? " (자동)" : ""}` : null].filter(Boolean).join(" · ");
   $("#s-r1").textContent = r.rank1 ? "적중" : "실패";
   $("#s-r1").style.color = r.rank1 ? "#1E5FD8" : "#A1400B";
   $("#s-ap").textContent = r.ap == null ? "–" : r.ap.toFixed(2);
@@ -136,6 +137,9 @@ function initSearch() {
     doSearch();
   });
   // 미세조정 백본은 이미 저조도를 학습해 AdaBN이 오히려 해로움(results/finetune.csv) → 백본에 맞춰 기본값 전환
+  $("#attr-strength").addEventListener("change", () => {
+    $("#strength-warn").classList.toggle("hidden", $("#attr-strength").value === "auto");
+  });
   $("#backbone").addEventListener("change", () => {
     S.adabn = $("#backbone").value !== "ft"; $("#t-adabn").setAttribute("aria-pressed", String(S.adabn));
   });

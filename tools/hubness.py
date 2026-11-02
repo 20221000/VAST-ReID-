@@ -33,6 +33,7 @@ from vastreid.reid import gpu_temp, load_model  # noqa: E402
 KS = [10, 50]
 BETAS = [0, 0.25, 0.5, 0.75, 1.0]
 LAMBDAS = [0, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0]
+ATTR_PROBE = "probe"
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 norm = lambda x: torch.nn.functional.normalize(x.float().to(DEV), dim=1)
 
@@ -71,8 +72,11 @@ def main():
     ap.add_argument("--lambdas", nargs="+", type=float, default=LAMBDAS)
     ap.add_argument("--out", type=Path, default=ROOT / "results/hubness.csv")
     ap.add_argument("--feat", default="none", choices=["none", "adabn"], help="adabn: 저조도 특징에 AdaBN 모델 사용")
+    ap.add_argument("--attr-probe", default="probe", help="갤러리 속성 예측 (probe: CLIP / probe-clip+osnet-ft)")
     ap.add_argument("--prefix", default="osnet_x1_0", help="특징 캐시 모델 이름 (미세조정: osnet_x1_0-ft)")
     args = ap.parse_args()
+    global ATTR_PROBE
+    ATTR_PROBE = args.attr_probe
     KS, BETAS, LAMBDAS = args.ks, args.betas, args.lambdas
     t0 = time.time()
     table = {int(k): v for k, v in json.loads(
@@ -96,8 +100,8 @@ def main():
                    key=lambda kb: score_eval(vqf, vgf, v_rg[kb[0]], kb[1], None, 0, vq, vg)[0]["mAP"])
         k_star, b_star = best
         v_agr = {
-            "probe": agreement(clip_rep(ql, "train", tq, qi_idx, "probe"), clip_rep(gl, "train", tg, gi_idx, "probe"), DEV),
-            "witness-probe": agreement(gt_rep([x.pid for x in vq], table), clip_rep(gl, "train", tg, gi_idx, "probe"), DEV),
+            "probe": agreement(clip_rep(ql, "train", tq, qi_idx, ATTR_PROBE), clip_rep(gl, "train", tg, gi_idx, ATTR_PROBE), DEV),
+            "witness-probe": agreement(gt_rep([x.pid for x in vq], table), clip_rep(gl, "train", tg, gi_idx, ATTR_PROBE), DEV),
         }
         lam_star = {}
         for src, agr in v_agr.items():
@@ -111,8 +115,8 @@ def main():
         qf, gf = norm(qf), norm(gf)
         rg = r_gallery(gf, ref, k_star)  # 참조 = train (테스트와 ID 겹치지 않음)
         agr = {
-            "probe": agreement(clip_rep(ql, "query", qi, pred="probe"), clip_rep(gl, "gallery", gi, pred="probe"), DEV),
-            "witness-probe": agreement(gt_rep([x.pid for x in qi], table), clip_rep(gl, "gallery", gi, pred="probe"), DEV),
+            "probe": agreement(clip_rep(ql, "query", qi, pred=ATTR_PROBE), clip_rep(gl, "gallery", gi, pred=ATTR_PROBE), DEV),
+            "witness-probe": agreement(gt_rep([x.pid for x in qi], table), clip_rep(gl, "gallery", gi, pred=ATTR_PROBE), DEV),
         }
         methods = [("cosine", 0.0, None, 0.0), ("csls", b_star, None, 0.0)]
         for src in ["probe", "witness-probe"]:

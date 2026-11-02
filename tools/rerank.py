@@ -78,7 +78,7 @@ def gt_rep(pids: list[int], table: dict[int, dict]) -> AttrRep:
 
 
 def clip_rep(level: str, split: str, items: list[Item], idx=None, pred: str = "clip") -> AttrRep:
-    name = "clip_ViT-B-16" if pred == "clip" else "probe"
+    name = "clip_ViT-B-16" if pred == "clip" else pred  # "probe" / "probe-ft" (tools/attr_probe.py --name)
     d = np.load(ROOT / f"outputs/attr_probs/{name}__{level}__{split}.npz")
     if not np.array_equal(d["pids"], np.array([x.pid for x in items])):
         raise RuntimeError(f"CLIP 확률과 이미지 목록 불일치: {level}/{split} (tools/clip_attributes.py 재실행)")

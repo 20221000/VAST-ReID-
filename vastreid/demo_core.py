@@ -27,6 +27,9 @@ PERSONS = {int(k): v for k, v in json.loads(
     (ROOT / "annotations/person_attributes.json").read_text(encoding="utf-8"))["persons"].items()}
 N_SAMPLES = 24
 BASE, FT = "osnet_x1_0", "osnet_x1_0-ft"  # 사전학습 / 저조도 미세조정(tools/finetune.py) 특징 캐시
+ATTR_STRENGTH = {"strong": 0.3, "max": 0.9}
+# 갤러리 속성 예측: 미세조정 백본은 CLIP + 미세조정 OSNet 특징 결합 분류기 (tools/attr_probe.py --src clip+osnet-ft)
+ATTR_PROBE = {BASE: "probe", FT: "probe-clip+osnet-ft"}  # λ (속성 하나당 가중치 = λ/6 → 0.05, 0.15)
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -44,8 +47,8 @@ def feats(level: str, split: str, feat: str = "none", prefix: str = BASE) -> np.
 
 
 @lru_cache(maxsize=None)
-def probs(level: str, split: str) -> dict:
-    z = np.load(ROOT / f"outputs/attr_probs/probe__{level}__{split}.npz")
+def probs(level: str, split: str, name: str = "probe") -> dict:
+    z = np.load(ROOT / f"outputs/attr_probs/{name}__{level}__{split}.npz")
     return {k: z[k].astype(np.float32) for k in ATTR_VALUES}
 
 
@@ -119,7 +122,7 @@ def _agreement(choices: dict, gp: dict) -> np.ndarray | None:
 
 
 _HUB_CSV = {(BASE, "none"): "hubness_wide.csv", (BASE, "adabn"): "hubness_adabn.csv",
-            (FT, "none"): "hubness_ft.csv", (FT, "adabn"): "hubness_ft_adabn.csv"}
+            (FT, "none"): "hubness_ft_pft.csv", (FT, "adabn"): "hubness_ft_adabn_pft.csv"}
 
 
 @lru_cache(maxsize=None)
@@ -172,7 +175,7 @@ def kr_rows(q_level: str, feat: str, prefix: str = BASE) -> np.ndarray | None:
 def kr_params(q_level: str, feat: str, prefix: str = BASE) -> dict | None:
     """results/kreciprocal.csv에서 검증 분할로 고른 k, β_kr, λ_kr (gallery = normal)."""
     proto = "same" if q_level == "normal" else "cross"
-    rows = [r for r in _csv("kreciprocal.csv" if prefix == BASE else "kreciprocal_ft.csv") if r["feat"] == feat and r["protocol"] == proto
+    rows = [r for r in _csv("kreciprocal.csv" if prefix == BASE else "kreciprocal_ft_pft.csv") if r["feat"] == feat and r["protocol"] == proto
             and r["query_level"] == q_level]
     get = lambda m: next((r for r in rows if r["method"] == m), None)
     a, b = get("kr+csls"), get("kr+csls+witness-probe")
@@ -184,7 +187,7 @@ def kr_params(q_level: str, feat: str, prefix: str = BASE) -> dict | None:
 def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: bool = True, csls: bool = True,
            beta: float = 1.0, lam: float = 0.5, attrs: dict | None = None,
            src_level: str | None = None, src_gallery: int | None = None, kr: bool = False,
-           ft: bool = False) -> dict:
+           ft: bool = False, attr_strength: str = "auto") -> dict:
     feat = "adabn" if adabn else "none"
     pf = FT if ft else BASE
     gi, gf = items(g_level, "gallery"), feats(g_level, "gallery", feat, pf)
@@ -215,7 +218,9 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
             beta, lam = cp["beta"], cp["lam"]
         if csls:
             score = score - beta * hub_score(q_level, g_level, feat, cp["k"] if cp else 50, pf)
-    agr = _agreement(attrs or {}, probs(g_level, "gallery"))
+    agr = _agreement(attrs or {}, probs(g_level, "gallery", ATTR_PROBE[pf]))
+    # 진술 반영 강도: auto = 검증 분할에서 고른 λ (정답률 최적), strong/max = 시연용으로 진술을 크게 반영
+    lam = ATTR_STRENGTH.get(attr_strength, lam)
     if agr is not None:
         score = score + lam * agr
     gp = np.array([g.pid for g in gi])
@@ -245,7 +250,7 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
         "gallery_size": len(gi), "g_level": LEVEL_LABEL[g_level],
         "rank1": bool(res and res[0]["ok"]), "ap": None if ap is None else round(ap, 3),
         "first_correct": ranks[0] if ranks else None, "results": res, "kr": kr_used, "kr_note": kr_note,
-        "ft": ft,
+        "ft": ft, "attr_weight": round(lam / len(ATTR_VALUES), 3), "attr_strength": attr_strength,
     }
 
 
@@ -313,7 +318,7 @@ def text_search(text: str, g_level: str = "normal", use_llm: bool = False, extra
     if not attrs:
         return {"how": how, "chips": [], "results": []}
     gi = items(g_level, "gallery")
-    score = _agreement(attrs, probs(g_level, "gallery"))
+    score = _agreement(attrs, probs(g_level, "gallery", ATTR_PROBE[FT]))  # 더 정확한 결합 분류기
     seen, res = set(), []
     for j in np.argsort(-score):
         g = gi[j]

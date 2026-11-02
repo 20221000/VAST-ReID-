@@ -2,6 +2,7 @@
 """CLIP 이미지 특징 위 선형 분류기(로지스틱 회귀)로 속성 예측 정확도 개선.
 
     python tools/attr_probe.py      # → outputs/attr_probs/probe__*.npz, results/attr_acc_probe.csv
+    python tools/attr_probe.py --src clip+osnet-ft --name probe-ft   # 미세조정 OSNet 특징 결합
 
 - CLIP은 고정(학습 안 함). 속성마다 로지스틱 회귀 하나 (CPU, 수 초).
 - 학습 데이터: train split의 normal·low·extreme 이미지 전부 (조도에 강하도록), 정답이 unknown인 속성은 제외.
@@ -18,11 +19,13 @@ import time
 from pathlib import Path
 
 import numpy as np
+import torch
 from sklearn.linear_model import LogisticRegression
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from vastreid.clip_attr import ATTR_VALUES  # noqa: E402
+from vastreid.data import list_split  # noqa: E402
 
 LEVELS = ["normal", "low", "extreme"]
 SRC = ROOT / "outputs/attr_probs"
@@ -30,9 +33,26 @@ C = 1.0
 FOLDS = 5
 
 
+SOURCE = "clip"
+
+
+def _l2(x):
+    return x / np.maximum(np.linalg.norm(x, axis=1, keepdims=True), 1e-8)
+
+
 def load(level: str, split: str):
+    """특징 출처: clip(CLIP ViT-B/16) / osnet-ft(저조도 미세조정 OSNet) / clip+osnet-ft(둘을 L2 정규화 후 이어 붙임)."""
     d = np.load(SRC / f"clip_ViT-B-16__{level}__{split}.npz")
-    return d["pids"], d["feat"].astype(np.float32)
+    pids, parts = d["pids"], []
+    if "clip" in SOURCE:
+        c = d["feat"].astype(np.float32)
+        parts.append(c if SOURCE == "clip" else _l2(c))  # clip 단독은 기존 결과 재현을 위해 그대로
+    if "osnet-ft" in SOURCE:
+        f = torch.load(ROOT / f"outputs/features/osnet_x1_0-ft__none__{level}__{split}.pt", weights_only=True)["feats"]
+        if not np.array_equal(pids, np.array([x.pid for x in list_split(ROOT / "data/vast", level, split)])):
+            raise RuntimeError(f"이미지 순서 불일치: {level}/{split}")
+        parts.append(_l2(f.float().numpy()))
+    return pids, np.concatenate(parts, axis=1)
 
 
 def labels(pids, table, attr):
@@ -55,6 +75,13 @@ def fit_predict(Xtr, ytr, Xte, n_cls):
 
 
 def main():
+    global SOURCE
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--src", default="clip", choices=["clip", "osnet-ft", "clip+osnet-ft"])
+    ap.add_argument("--name", default="probe", help="출력 이름: outputs/attr_probs/{name}__*.npz, results/attr_acc_{name}.csv")
+    args = ap.parse_args()
+    SOURCE = args.src
     t0 = time.time()
     table = {int(k): v for k, v in json.loads(
         (ROOT / "annotations/person_attributes.json").read_text(encoding="utf-8"))["persons"].items()}
@@ -71,6 +98,7 @@ def main():
     test = {(lv, sp): load(lv, sp) for lv in LEVELS for sp in ["query", "gallery"]}
     offsets = np.cumsum([0] + [len(train[lv][0]) for lv in LEVELS])
 
+    oof_acc = {}
     for attr, vals in ATTR_VALUES.items():
         y = labels(ptr, table, attr)
         # train: ID 기준 교차 예측
@@ -78,6 +106,8 @@ def main():
         for k in range(FOLDS):
             te = fold == k
             oof[te] = fit_predict(Xtr[~te], y[~te], Xtr[te], len(vals))
+        m = y >= 0
+        oof_acc[attr] = float((oof[m].argmax(1) == y[m]).mean())  # 특징 출처 선택용 (테스트셋 대신)
         for i, lv in enumerate(LEVELS):
             probs[(lv, "train")][attr] = oof[offsets[i]:offsets[i + 1]]
         # query·gallery: train 전체로 학습
@@ -91,7 +121,9 @@ def main():
 
     for (lv, sp), d in probs.items():
         pids = train[lv][0] if sp == "train" else test[(lv, sp)][0]
-        np.savez_compressed(SRC / f"probe__{lv}__{sp}.npz", pids=pids, **d)
+        np.savez_compressed(SRC / f"{args.name}__{lv}__{sp}.npz", pids=pids, **d)
+    print("  [train 교차 예측] " + "  ".join(f"{a} {v*100:.1f}" for a, v in oof_acc.items())
+          + f"  | mean {np.mean(list(oof_acc.values()))*100:.1f}")
 
     # 정확도 (query+gallery, 정답 unknown 제외) — clip_attributes.py 와 같은 기준
     rows = []
@@ -106,11 +138,12 @@ def main():
                 c += int((pred[m] == y[m]).sum())
                 n += int(m.sum())
             accs[attr] = c / max(n, 1)
-        rows.append({"model": "clip_ViT-B-16+linear_probe", "level": lv, **{a: round(v, 4) for a, v in accs.items()},
+        rows.append({"model": {"clip": "clip_ViT-B-16", "osnet-ft": "osnet_x1_0-ft",
+                               "clip+osnet-ft": "clip_ViT-B-16+osnet_x1_0-ft"}[SOURCE] + "+linear_probe", "level": lv, **{a: round(v, 4) for a, v in accs.items()},
                      "mean_acc": round(float(np.mean(list(accs.values()))), 4)})
         print(f"  [{lv}] " + "  ".join(f"{a} {v*100:.1f}" for a, v in accs.items())
               + f"  | mean {np.mean(list(accs.values()))*100:.1f}")
-    out = ROOT / "results/attr_acc_probe.csv"
+    out = ROOT / f"results/attr_acc_{args.name}.csv"
     with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()

@@ -57,7 +57,8 @@ def samples(level: str = "low"):
 def search(q_level: str = "low", sample: int | None = None, g_level: str = "normal", adabn: bool = True,
            csls: bool = True, kr: bool = False, beta: float = 1.0, lam: float = 0.5, src_level: str | None = None,
            src_gallery: int | None = None, upper_color: str = "", lower_color: str = "", sleeve: str = "",
-           lower_type: str = "", bag: str = "", hat: str = "", ft: bool = False):
+           lower_type: str = "", bag: str = "", hat: str = "", ft: bool = False,
+           attr_strength: str = "auto"):
     if sample is None and src_gallery is None:
         raise HTTPException(400, "sample or src_gallery")
     if sample is not None and not 0 <= sample < len(core.sample_idx()):
@@ -65,7 +66,8 @@ def search(q_level: str = "low", sample: int | None = None, g_level: str = "norm
     attrs = {"upper_color": upper_color, "lower_color": lower_color, "sleeve": sleeve,
              "lower_type": lower_type, "bag": bag, "hat": hat}
     return core.search(_level(q_level), sample, _level(g_level), adabn, csls, beta, lam, attrs,
-                       _level(src_level) if src_level else None, src_gallery, kr, ft)
+                       _level(src_level) if src_level else None, src_gallery, kr, ft,
+                       attr_strength if attr_strength in ("auto", "strong", "max") else "auto")
 
 
 @app.get("/api/text")

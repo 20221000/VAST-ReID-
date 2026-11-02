@@ -1,0 +1,4 @@
+model,level,upper_color,lower_color,sleeve,lower_type,bag,hat,mean_acc
+clip_ViT-B-16+osnet_x1_0-ft+linear_probe,normal,0.8165,0.7388,0.9387,0.8914,0.6477,0.9739,0.8345
+clip_ViT-B-16+osnet_x1_0-ft+linear_probe,low,0.8056,0.7231,0.9384,0.8713,0.6263,0.9737,0.8231
+clip_ViT-B-16+osnet_x1_0-ft+linear_probe,extreme,0.7688,0.6439,0.934,0.8077,0.5708,0.9739,0.7832

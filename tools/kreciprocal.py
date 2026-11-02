@@ -29,6 +29,7 @@ from rerank import agreement, clip_rep, get_feats, gt_rep, val_split  # noqa: E4
 from vastreid.metrics import evaluate_fast  # noqa: E402
 from vastreid.reid import gpu_temp, load_model  # noqa: E402
 
+ATTR_PROBE = "probe"
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 K1, K2, LAM = 20, 6, 0.3
 BETAS = [0, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0]
@@ -66,11 +67,14 @@ def hub_k(feat, proto, ql, hub_csv):
 def main():
     import argparse
     ap = argparse.ArgumentParser()
+    ap.add_argument("--attr-probe", default="probe", help="갤러리 속성 예측 (probe: CLIP / probe-clip+osnet-ft)")
     ap.add_argument("--prefix", default="osnet_x1_0", help="특징 캐시 모델 이름 (미세조정: osnet_x1_0-ft)")
     ap.add_argument("--hub-none", type=Path, default=ROOT / "results/hubness_wide.csv")
     ap.add_argument("--hub-adabn", type=Path, default=ROOT / "results/hubness_adabn.csv")
     ap.add_argument("--out", type=Path, default=ROOT / "results/kreciprocal.csv")
     args = ap.parse_args()
+    global ATTR_PROBE
+    ATTR_PROBE = args.attr_probe
     hub_csv = {"none": args.hub_none, "adabn": args.hub_adabn}
     t0 = time.time()
     table = {int(k): v for k, v in json.loads(
@@ -93,7 +97,7 @@ def main():
             v_rg = r_gallery(vgf, ref, k, torch.tensor([x.pid for x in vg], device=DEV), r_p)
             v_d = kr(vqf, vgf)
             v_agr = agreement(gt_rep([x.pid for x in vq], table),
-                              clip_rep(gl, "train", tg, gi_idx, "probe"), DEV).cpu().numpy()
+                              clip_rep(gl, "train", tg, gi_idx, ATTR_PROBE), DEV).cpu().numpy()
             beta = max(BETAS, key=lambda b: ev(v_d + b * v_rg[None, :], vq, vg)["mAP"])
             lam = max(LAMBDAS, key=lambda l: ev(v_d + beta * v_rg[None, :] - l * v_agr, vq, vg)["mAP"])
             # ---- 테스트
@@ -102,7 +106,7 @@ def main():
             qf, gf = norm(qf), norm(gf)
             rg = r_gallery(gf, ref, k)[None, :]
             agr = agreement(gt_rep([x.pid for x in qi], table),
-                            clip_rep(gl, "gallery", gi, pred="probe"), DEV).cpu().numpy()
+                            clip_rep(gl, "gallery", gi, pred=ATTR_PROBE), DEV).cpu().numpy()
             d = kr(qf, gf)
             for name, dist, b, l in [("kr", d, 0.0, 0.0), ("kr+csls", d + beta * rg, beta, 0.0),
                                      ("kr+csls+witness-probe", d + beta * rg - lam * agr, beta, lam)]:
