@@ -435,3 +435,10 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - 현재 최고: 최종 모델(osnet_x1_0-ftmsmt24) + k-reciprocal + CSLS + 속성, Extreme 83.0 / 77.9, Low 90.8 / 85.6.
 - 다음 후보(DEVLOG "Day 1~2 정리"): ① 밝은/어두운 짝 일관성 손실 ② Triplet + PK ③ 검증용 ID 분리 ④ 색 범위 확대·TTA ⑤ 백본 교체.
 - 보류: 데이터셋 공유 방식(공개 저장소라 커밋 불가, 제출 규정 확인 필요), NightReID·MSMT17 공식 동의서, HF 배포, 발표 자료.
+
+### Windows 네이티브로 이전 (11/3)
+- 작업 위치: `C:\GitHub\VAST-ReID\VAST-ReID-` (PowerShell). WSL 사본(`~/projects/VAST-ReID-`, 같은 커밋)은 백업으로 유지.
+- WSL에서 복사: `.env`(키 4개), `.git/hooks/pre-commit`, `weights/`, `data/`(`data/raw/mot17_zip` 제외), `outputs/`.
+- `.venv`: uv Python 3.12, torch 2.11.0+cu128, 나머지는 WSL `uv pip freeze`와 같은 버전으로 고정. torchreid·TrackEval은 WSL과 같은 커밋.
+  torchreid 빌드 전에 tensorboard 필요(`--no-build-isolation`), Cython 평가 확장도 빌드됨. 실행은 `.venv\Scripts\python.exe ...`.
+- 주의: `tools/finetune.py`는 `num_workers=8` → Windows는 프로세스 spawn 방식이라 첫 에폭 시작이 느릴 수 있음(재학습 시 확인).

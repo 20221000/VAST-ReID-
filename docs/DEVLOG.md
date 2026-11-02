@@ -767,3 +767,15 @@
 3. 검증용 ID 분리 → λ·β 재선택.
 4. 색 변화 범위 확대, 좌우 반전 평균(TTA).
 5. 더 강한 백본(CLIP-ReID 등).
+
+## Day 3 (11/3)
+
+### WSL2 → Windows 네이티브 이전
+- 계기: 사용자가 WSL 원격 조작보다 Windows에서 직접 작업하는 편이 낫다고 판단.
+- 방법: GitHub에서 clone한 코드에 WSL 사본의 로컬 전용 파일(`.env`, 가중치, 데이터, 특징 캐시, pre-commit 훅)을 복사. 키는 새로 받지 않음.
+  데이터는 작은 파일이 많아 `\wsl.localhost` 복사보다 WSL 안에서 `tar`로 묶어 `/mnt/c`로 푸는 쪽을 사용.
+- 환경: 패키지 버전을 WSL `uv pip freeze`로 고정해 같은 결과가 나오도록 함(torch 2.11.0+cu128, torchreid·TrackEval 같은 커밋).
+- 시행착오: torchreid를 `--no-build-isolation`으로 빌드할 때 setup 단계에서 `torch.utils.tensorboard`를 import해 tensorboard가 먼저 필요했음.
+- 복사: 데이터는 작은 파일이 많아 약 50분 걸림(파일 수 data 350,999 / outputs 589로 WSL과 일치 확인).
+- 검증: Windows에서 `demo/server.py` 실행 → 샘플 24개 Extreme Rank-1 사전학습 10 / Market 미세조정 16 / 최종 20으로 WSL 결과와 동일.
+  MSMT17 검색(gallery 82,161장) 약 1.1초, 텍스트 검색·벤치마크 정상.

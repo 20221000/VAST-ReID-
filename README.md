@@ -335,6 +335,7 @@ uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu
 uv pip install -r requirements.txt
 # torchreid는 공식 레포에서 설치 (C 컴파일러 필요: sudo apt install build-essential)
 uv pip install --no-build-isolation git+https://github.com/KaiyangZhou/deep-person-reid.git
+# Windows(PowerShell): 활성화는 .venv\Scripts\activate, torchreid 빌드 전에 `uv pip install tensorboard cython` 필요
 
 # 데이터 (Kaggle 토큰은 환경변수로만 전달)
 export KAGGLE_API_TOKEN=<your_token>
