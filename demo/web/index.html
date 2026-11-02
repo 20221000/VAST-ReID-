@@ -59,17 +59,23 @@
             <label class="field">모자<select id="a-hat"></select></label>
           </div>
         </details>
-        <label class="field">모델
+        <label class="field">백본
+          <select id="backbone">
+            <option value="ft">OSNet 저조도 미세조정 (12 에폭)</option>
+            <option value="base">OSNet 사전학습 (Market-1501)</option>
+          </select>
+        </label>
+        <label class="field">거리 보정
           <select id="model">
-            <option value="csls+kr">OSNet + Hub 보정 + 재순위화</option>
-            <option value="csls">OSNet + Hub 보정 (CSLS)</option>
-            <option value="kr">OSNet + 재순위화 (k-reciprocal)</option>
-            <option value="plain">OSNet</option>
+            <option value="csls+kr">Hub 보정 + 재순위화</option>
+            <option value="csls">Hub 보정 (CSLS)</option>
+            <option value="kr">재순위화 (k-reciprocal)</option>
+            <option value="plain">없음 (코사인)</option>
           </select>
         </label>
       </section>
 
-      <button type="button" class="toggle" id="t-adabn" aria-pressed="true">
+      <button type="button" class="toggle" id="t-adabn" aria-pressed="false">
         <span class="t"><b>저조도 보정</b><small>AdaBN (BN 통계 재추정)</small></span>
         <span class="track"><i></i></span>
       </button>
@@ -144,7 +150,8 @@
         <span style="color:var(--sub)" id="d-meta"></span>
       </div>
       <div class="dphoto"><img id="d-img" alt="선택한 인물"></div>
-      <div class="capbox"><div>시맨틱 캡션 (속성 기반)</div><span id="d-cap"></span></div>
+      <div class="capbox"><div id="d-cap-head">AI 시맨틱 캡션</div><span id="d-cap-ai"></span>
+        <small id="d-cap" style="display:block;margin-top:8px;color:var(--sub);font-size:12px"></small></div>
       <dl class="attrs">
         <dt>상의</dt><dd id="d-up"></dd>
         <dt>하의</dt><dd id="d-low"></dd>
@@ -163,7 +170,7 @@
     <div class="bhead">
       <div style="display:flex;flex-direction:column;gap:8px">
         <h1>조도별 성능 벤치마크</h1>
-        <span class="real">results/*.csv 실제 실행 결과 · OSNet(Market-1501 사전학습) 추론</span>
+        <span class="real">results/*.csv 실제 실행 결과 · OSNet(Market-1501 사전학습) + 저조도 미세조정</span>
       </div>
       <div class="mtoggle" role="group" aria-label="지표 선택">
         <button type="button" data-metric="rank1" aria-pressed="true">Rank-1</button>

@@ -57,7 +57,7 @@ def samples(level: str = "low"):
 def search(q_level: str = "low", sample: int | None = None, g_level: str = "normal", adabn: bool = True,
            csls: bool = True, kr: bool = False, beta: float = 1.0, lam: float = 0.5, src_level: str | None = None,
            src_gallery: int | None = None, upper_color: str = "", lower_color: str = "", sleeve: str = "",
-           lower_type: str = "", bag: str = "", hat: str = ""):
+           lower_type: str = "", bag: str = "", hat: str = "", ft: bool = False):
     if sample is None and src_gallery is None:
         raise HTTPException(400, "sample or src_gallery")
     if sample is not None and not 0 <= sample < len(core.sample_idx()):
@@ -65,7 +65,7 @@ def search(q_level: str = "low", sample: int | None = None, g_level: str = "norm
     attrs = {"upper_color": upper_color, "lower_color": lower_color, "sleeve": sleeve,
              "lower_type": lower_type, "bag": bag, "hat": hat}
     return core.search(_level(q_level), sample, _level(g_level), adabn, csls, beta, lam, attrs,
-                       _level(src_level) if src_level else None, src_gallery, kr)
+                       _level(src_level) if src_level else None, src_gallery, kr, ft)
 
 
 @app.get("/api/text")
@@ -85,6 +85,27 @@ def attr_values():
 @app.get("/api/bench")
 def bench():
     return core.bench()
+
+
+@app.get("/api/ai_caption")
+def ai_caption(level: str, split: str, name: str):
+    try:
+        return core.ai_caption(level, split, name)
+    except ValueError:
+        raise HTTPException(400, "image")
+    except Exception as e:  # 키 없음, 호출 상한 등
+        return {"text": "", "error": f"{type(e).__name__}: {str(e)[:120]}"}
+
+
+@app.get("/api/ai_explain")
+def ai_explain(q_level: str, q_split: str, q_name: str, g_level: str, g_name: str,
+               causes: str = Query("", max_length=400)):
+    try:
+        return core.ai_explain(q_level, q_split, q_name, g_level, g_name, [c for c in causes.split("|") if c])
+    except ValueError:
+        raise HTTPException(400, "image")
+    except Exception as e:
+        return {"text": "", "error": f"{type(e).__name__}: {str(e)[:120]}"}
 
 
 @app.get("/api/track_frame")

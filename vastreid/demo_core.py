@@ -26,6 +26,7 @@ VALUE_KO = {"black": "검정", "white": "흰색", "red": "빨강", "purple": "�
 PERSONS = {int(k): v for k, v in json.loads(
     (ROOT / "annotations/person_attributes.json").read_text(encoding="utf-8"))["persons"].items()}
 N_SAMPLES = 24
+BASE, FT = "osnet_x1_0", "osnet_x1_0-ft"  # 사전학습 / 저조도 미세조정(tools/finetune.py) 특징 캐시
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -36,9 +37,9 @@ def items(level: str, split: str):
 
 
 @lru_cache(maxsize=None)
-def feats(level: str, split: str, feat: str = "none") -> np.ndarray:
+def feats(level: str, split: str, feat: str = "none", prefix: str = BASE) -> np.ndarray:
     tag = f"adabn-{level}" if feat == "adabn" and level != "normal" else "none"
-    d = torch.load(ROOT / f"outputs/features/osnet_x1_0__{tag}__{level}__{split}.pt", weights_only=True)
+    d = torch.load(ROOT / f"outputs/features/{prefix}__{tag}__{level}__{split}.pt", weights_only=True)
     return torch.nn.functional.normalize(d["feats"].float(), dim=1).numpy()
 
 
@@ -49,16 +50,17 @@ def probs(level: str, split: str) -> dict:
 
 
 @lru_cache(maxsize=None)
-def hub_score(q_level: str, g_level: str, feat: str, k: int = 50) -> np.ndarray:
-    g = torch.from_numpy(feats(g_level, "gallery", feat)).to(DEV)
-    r = torch.from_numpy(feats(q_level, "train", feat)).to(DEV)
+def hub_score(q_level: str, g_level: str, feat: str, k: int = 50, prefix: str = BASE) -> np.ndarray:
+    g = torch.from_numpy(feats(g_level, "gallery", feat, prefix)).to(DEV)
+    r = torch.from_numpy(feats(q_level, "train", feat, prefix)).to(DEV)
     return torch.cat([(g[s:s + 4096] @ r.T).topk(k, dim=1).values.mean(1)
                       for s in range(0, len(g), 4096)]).cpu().numpy()
 
 
 @lru_cache(maxsize=None)
-def hub_freq(feat: str, q_level: str) -> np.ndarray | None:
-    p = ROOT / f"outputs/demo/hub_freq__{feat}__{q_level}__normal.npy"
+def hub_freq(feat: str, q_level: str, prefix: str = BASE) -> np.ndarray | None:
+    pre = "" if prefix == BASE else f"{prefix}__"
+    p = ROOT / f"outputs/demo/hub_freq__{pre}{feat}__{q_level}__normal.npy"
     return np.load(p) if p.exists() else None
 
 
@@ -123,11 +125,12 @@ def _ap(order: np.ndarray, gpids: np.ndarray, valid: np.ndarray, pid: int) -> fl
     return float((hits[pos] / (pos + 1)).mean())
 
 
-def _failure_causes(q_pid: int, g_item, j: int, q_level: str, feat: str, use_csls: bool) -> list[str]:
+def _failure_causes(q_pid: int, g_item, j: int, q_level: str, feat: str, use_csls: bool,
+                    prefix: str = BASE) -> list[str]:
     causes = []
     if g_item.pid <= 0:
         causes.append("사람이 아니거나 일부만 찍힌 이미지")
-    freq = hub_freq(feat, q_level) if q_level != "normal" else None  # tools/failure_analysis.py가 저장한 빈도
+    freq = hub_freq(feat, q_level, prefix) if q_level != "normal" else None  # tools/failure_analysis.py가 저장한 빈도
     if freq is not None and freq[j] >= 34:
         causes.append(f"hub 이미지 · 어두운 query {int(freq[j]):,}개의 Top-10에 등장")
     a, b = PERSONS.get(q_pid), PERSONS.get(g_item.pid)
@@ -143,17 +146,18 @@ def _failure_causes(q_pid: int, g_item, j: int, q_level: str, feat: str, use_csl
 
 
 @lru_cache(maxsize=None)
-def kr_rows(q_level: str, feat: str) -> np.ndarray | None:
+def kr_rows(q_level: str, feat: str, prefix: str = BASE) -> np.ndarray | None:
     """tools/build_demo_cache.py가 만든 샘플 쿼리의 k-reciprocal 거리 (24, Ng)."""
-    p = ROOT / f"outputs/demo/kr__{q_level}__{feat}.npy"
+    pre = "" if prefix == BASE else f"{prefix}__"
+    p = ROOT / f"outputs/demo/kr__{pre}{q_level}__{feat}.npy"
     return np.load(p).astype(np.float32) if p.exists() else None
 
 
 @lru_cache(maxsize=None)
-def kr_params(q_level: str, feat: str) -> dict | None:
+def kr_params(q_level: str, feat: str, prefix: str = BASE) -> dict | None:
     """results/kreciprocal.csv에서 검증 분할로 고른 k, β_kr, λ_kr (gallery = normal)."""
     proto = "same" if q_level == "normal" else "cross"
-    rows = [r for r in _csv("kreciprocal.csv") if r["feat"] == feat and r["protocol"] == proto
+    rows = [r for r in _csv("kreciprocal.csv" if prefix == BASE else "kreciprocal_ft.csv") if r["feat"] == feat and r["protocol"] == proto
             and r["query_level"] == q_level]
     get = lambda m: next((r for r in rows if r["method"] == m), None)
     a, b = get("kr+csls"), get("kr+csls+witness-probe")
@@ -164,33 +168,35 @@ def kr_params(q_level: str, feat: str) -> dict | None:
 
 def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: bool = True, csls: bool = True,
            beta: float = 1.0, lam: float = 0.5, attrs: dict | None = None,
-           src_level: str | None = None, src_gallery: int | None = None, kr: bool = False) -> dict:
+           src_level: str | None = None, src_gallery: int | None = None, kr: bool = False,
+           ft: bool = False) -> dict:
     feat = "adabn" if adabn else "none"
-    gi, gf = items(g_level, "gallery"), feats(g_level, "gallery", feat)
+    pf = FT if ft else BASE
+    gi, gf = items(g_level, "gallery"), feats(g_level, "gallery", feat, pf)
     if src_gallery is not None:  # 텍스트 검색 결과를 query로 재검색
         lv = src_level or g_level
         qi_ = items(lv, "gallery")[src_gallery]
-        qf = feats(lv, "gallery", feat)[src_gallery]
+        qf = feats(lv, "gallery", feat, pf)[src_gallery]
         q_level, q_split = lv, "gallery"
     else:
         qi_ = items(q_level, "query")[sample_idx()[sample]]
-        qf = feats(q_level, "query", feat)[sample_idx()[sample]]
+        qf = feats(q_level, "query", feat, pf)[sample_idx()[sample]]
         q_split = "query"
     cos = gf @ qf
     kr_used, kr_note = False, None
-    rows = kr_rows(q_level, feat) if kr else None
-    kp = kr_params(q_level, feat) if kr else None
+    rows = kr_rows(q_level, feat, pf) if kr else None
+    kp = kr_params(q_level, feat, pf) if kr else None
     if kr and (src_gallery is not None or g_level != "normal" or rows is None or kp is None):
         kr_note = "재순위화는 샘플 쿼리(주간 gallery)에만 미리 계산되어 있어 이번 검색에는 적용하지 않았습니다"
     elif kr:
         d = rows[sample].copy()  # k-reciprocal 거리 (작을수록 가까움)
         if csls:
-            d = d + kp["beta"] * hub_score(q_level, g_level, feat, kp["k"])
+            d = d + kp["beta"] * hub_score(q_level, g_level, feat, kp["k"], pf)
         score, kr_used, lam = -d, True, kp["lam"]  # 속성 가중치도 k-reciprocal 척도에 맞춘 값 사용
     if not kr_used:
         score = cos.copy()
         if csls:
-            score = score - beta * hub_score(q_level, g_level, feat)
+            score = score - beta * hub_score(q_level, g_level, feat, prefix=pf)
     agr = _agreement(attrs or {}, probs(g_level, "gallery"))
     if agr is not None:
         score = score + lam * agr
@@ -205,21 +211,23 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
     for r, j in enumerate(order[:10], 1):
         g = gi[j]
         ok = bool(g.pid == qi_.pid)
-        res.append({"rank": r, "url": img_url(g_level, "gallery", g.path.name), "name": g.path.stem,
+        res.append({"rank": r, "url": img_url(g_level, "gallery", g.path.name), "name": g.path.stem, "glvl": g_level,
                     "score": round(float(score[j]), 3), "sim": round(float(cos[j]), 3), "pid": int(g.pid),
                     "cam": f"cam{g.camid + 1:02d}",
                     "illum": LEVEL_LABEL[g_level], "ok": ok,
-                    "causes": [] if ok else _failure_causes(qi_.pid, g, int(j), q_level, feat, csls)})
+                    "causes": [] if ok else _failure_causes(qi_.pid, g, int(j), q_level, feat, csls, pf)})
     ap = _ap(order, gp, valid, qi_.pid)
     ranks = [r for r, j in enumerate(order[np.isfinite(score[order])], 1) if gp[j] == qi_.pid]
     lum = luminance().get((q_level, f"{q_split}/{qi_.path.name}"))
     return {
         "query": {"url": img_url(q_level, q_split, qi_.path.name), "name": qi_.path.stem,
                   "level": LEVEL_LABEL[q_level], "luminance": lum, "pid": int(qi_.pid),
-                  "caption": caption(qi_.pid), "original": img_url("normal", q_split, qi_.path.name)},
+                  "caption": caption(qi_.pid), "original": img_url("normal", q_split, qi_.path.name),
+                  "split": q_split, "lvl": q_level},
         "gallery_size": len(gi), "g_level": LEVEL_LABEL[g_level],
         "rank1": bool(res and res[0]["ok"]), "ap": None if ap is None else round(ap, 3),
         "first_correct": ranks[0] if ranks else None, "results": res, "kr": kr_used, "kr_note": kr_note,
+        "ft": ft,
     }
 
 
@@ -321,6 +329,7 @@ def _pick(rows, **kw):
 def bench() -> dict:
     base, wide, ada = _csv("baseline.csv"), _csv("hubness_wide.csv"), _csv("hubness_adabn.csv")
     enh2, krc = _csv("enhance_v2.csv"), _csv("kreciprocal.csv")
+    ft, krf = _csv("finetune.csv"), _csv("kreciprocal_ft.csv")
 
     def triple(rows, method, extra=None):
         out = {}
@@ -349,14 +358,22 @@ def bench() -> dict:
     if krc:
         rows.append({"name": "AdaBN + CSLS + 재순위화 + 목격자 속성",
                      **triple(krc, "kr+csls+witness-probe", {"feat": "adabn"}), "note": "k-reciprocal 표준값"})
+    if ft:
+        rows.append({"name": "저조도 미세조정 OSNet", **triple(ft, "cosine", {"feat": "none"}),
+                     "note": "train 3조도 12 에폭"})
+    if krf:
+        rows.append({"name": "미세조정 + CSLS + 재순위화 + 목격자 속성",
+                     **triple(krf, "kr+csls+witness-probe", {"feat": "none"})})
     b_n = _pick(base, protocol="same", query_level="normal")
     b_e = _pick(base, protocol="cross", query_level="extreme")
     z_l = _pick(enh2, enhance="zerodce", denoise="none", protocol="cross", query_level="low")
     c_l = _pick(wide, method="cosine", protocol="cross", query_level="low")
     best = _pick(ada, method="csls+witness-probe", protocol="cross", query_level="low")
     best_kr = _pick(krc, feat="adabn", method="kr+csls+witness-probe", protocol="cross", query_level="low")
-    if best_kr and (not best or float(best_kr["rank1"]) > float(best["rank1"])):
-        best = best_kr
+    best_ft = _pick(krf, feat="none", method="kr+csls+witness-probe", protocol="cross", query_level="low")
+    for cand in (best_kr, best_ft):
+        if cand and (not best or float(cand["rank1"]) > float(best["rank1"])):
+            best = cand
     cards = {
         "dataset": {"persons": len(PERSONS), "images": 36036, "levels": 3},
         "drop": None if not (b_n and b_e) else round((float(b_e["rank1"]) - float(b_n["rank1"])) * 100, 1),
@@ -408,3 +425,50 @@ def track_frame(level: str, i: int, tracker: str = "botsort-osnet-adabn", seq: s
         cv2.putText(img, f"ID {tid:02d}", (int(x) + 6, int(y) - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (20, 20, 20), 2)
     img = cv2.resize(img, (960, int(img.shape[0] * 960 / img.shape[1])))
     return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+
+
+# ------------------------------------------------------------------ 생성형 AI (비전 LLM): 캡션, 오답 설명
+# 클릭할 때 한 번만 호출하고 vastreid.llm 디스크 캐시로 재사용 (반 공용 키 → 서버 실행당 호출 상한)
+AI_PROVIDER = "openai"
+AI_MAX_CALLS = 120
+_AI_SYSTEM = ("You describe pedestrians in surveillance images for a person re-identification research demo. "
+              "Describe only clothing, colors, carried items and visible context. Never mention or guess gender, age, "
+              "race, ethnicity, or identity. Answer in natural Korean.")
+
+
+@lru_cache(maxsize=1)
+def _llm():
+    from vastreid.llm import LLM
+    return LLM(provider=AI_PROVIDER, max_calls=AI_MAX_CALLS)
+
+
+def _img_path(level: str, split: str, name: str) -> Path:
+    if level not in LEVELS or split not in ("query", "gallery") or not re.match(r"^-?\d{1,4}_c\ds\d_\d{6}_\d{2}$", name):
+        raise ValueError("bad image")
+    p = DATA / level / split / f"{name}.jpg"
+    if not p.is_file():
+        raise ValueError("no image")
+    return p
+
+
+def ai_caption(level: str, split: str, name: str) -> dict:
+    """인물 사진 한 장을 보고 옷차림·소지품을 자연스러운 한 문장으로 묘사 (시맨틱 캡션)."""
+    p = _img_path(level, split, name)
+    text = _llm().chat(_AI_SYSTEM,
+                       "이 보행자의 옷차림과 소지품을 CCTV 검색에 쓸 수 있도록 자연스러운 한국어 한두 문장으로 묘사해 주세요. "
+                       "상의·하의의 색과 종류, 가방·모자 등 소지품을 포함하고, 사진에서 확실하지 않은 것은 추측하지 마세요.",
+                       images=[p], tag="demo_caption")
+    return {"text": (text or "").strip(), "model": _llm().pcfg["vision_model"], "summary": _llm().summary()}
+
+
+def ai_explain(q_level: str, q_split: str, q_name: str, g_level: str, g_name: str, causes: list[str]) -> dict:
+    """쿼리(현재 조도)와 오답 결과를 함께 보고, 검색 모델이 왜 헷갈렸는지 설명."""
+    qp, gp = _img_path(q_level, q_split, q_name), _img_path(g_level, "gallery", g_name)
+    hint = "; ".join(causes[:4]) if causes else "없음"
+    text = _llm().chat(_AI_SYSTEM,
+                       f"첫 번째 사진은 {LEVEL_LABEL[q_level]} 조도의 검색 쿼리, 두 번째 사진은 검색 결과로 나온 **다른 사람**입니다. "
+                       f"사람 재식별 모델이 왜 두 사람을 같은 사람으로 헷갈렸을지 2~3문장으로 설명해 주세요. "
+                       f"옷차림·소지품의 공통점, 조명·노이즈로 사라진 단서, 그리고 두 사람을 구분할 수 있는 차이점을 포함하세요. "
+                       f"분석 시스템이 자동으로 찾은 실패 원인 후보: {hint}",
+                       images=[qp, gp], tag="demo_explain")
+    return {"text": (text or "").strip(), "model": _llm().pcfg["vision_model"], "summary": _llm().summary()}

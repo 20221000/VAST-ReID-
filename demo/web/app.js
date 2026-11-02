@@ -24,7 +24,7 @@ function route() {
 window.addEventListener("hashchange", route);
 
 /* ---------------- 1. 이미지 검색 ---------------- */
-const S = { level: "extreme", sample: 0, src: null, adabn: true, last: null, selected: null };
+const S = { level: "extreme", sample: 0, src: null, adabn: false, last: null, selected: null };
 
 function fillAttrSelect(id, key) {
   const el = $(id);
@@ -45,6 +45,7 @@ function attrsParams() {
 async function doSearch() {
   const m = $("#model").value;
   const params = { q_level: S.level, g_level: "normal", adabn: S.adabn, csls: m.includes("csls"), kr: m.includes("kr"),
+                   ft: $("#backbone").value === "ft",
                    beta: 1.0, lam: 0.5, ...attrsParams() };
   if (S.src) Object.assign(params, { src_gallery: S.src.gidx, src_level: S.src.level, q_level: S.src.level });
   else params.sample = S.sample;
@@ -67,7 +68,8 @@ function renderSearch(r) {
   const model = [m.includes("csls") ? "Hub 보정" : null, r.kr ? "재순위화" : null].filter(Boolean).join(" + ") || "외형만";
   $("#kr-note").textContent = r.kr_note || "";
   $("#kr-note").classList.toggle("hidden", !r.kr_note);
-  $("#r-sub").textContent = [`갤러리 ${r.gallery_size.toLocaleString()}장 (${r.g_level})`, `쿼리 ${q.level}`, model, S.adabn ? "AdaBN" : null, ...filt].filter(Boolean).join(" · ");
+  $("#r-sub").textContent = [`갤러리 ${r.gallery_size.toLocaleString()}장 (${r.g_level})`, `쿼리 ${q.level}`,
+    r.ft ? "미세조정 OSNet" : "사전학습 OSNet", model, S.adabn ? "AdaBN" : null, ...filt].filter(Boolean).join(" · ");
   $("#s-r1").textContent = r.rank1 ? "적중" : "실패";
   $("#s-r1").style.color = r.rank1 ? "#1E5FD8" : "#A1400B";
   $("#s-ap").textContent = r.ap == null ? "–" : r.ap.toFixed(2);
@@ -109,8 +111,10 @@ function showCompare(i) {
     <figure><div class="photo"><img src="${esc(r.query.url)}" alt="쿼리 (${esc(r.query.level)})"></div><figcaption>쿼리 · ${esc(r.query.level)}</figcaption></figure>
     <figure><div class="photo"><img src="${esc(r.query.original)}" alt="쿼리 원본"></div><figcaption>쿼리 원본 · Normal</figcaption></figure>
     <figure><div class="photo"><img src="${esc(x.url)}" alt="${x.rank}위 결과"></div><figcaption>${x.rank}위 · ${x.ok ? "정답" : "오답"} · ID ${x.pid > 0 ? x.pid : "없음"}</figcaption></figure>
-    <p class="foot" style="flex:1 1 220px;margin:0">${esc(r.query.caption)}<br>(쿼리 인물의 정답 속성, 참고용)</p>`;
+    <p class="foot" style="flex:1 1 220px;margin:0">${esc(r.query.caption)}<br>(쿼리 인물의 정답 속성, 참고용)</p>
+    ${x.ok ? "" : `<div class="aibox wait" id="ai-explain"><b>AI 오답 설명 · 비전 LLM</b><span>쿼리와 오답 사진을 보고 설명을 만드는 중…</span></div>`}`;
   $("#compare-box").classList.remove("hidden");
+  if (!x.ok) loadExplain(r, x);
   refit();
 }
 
@@ -131,11 +135,26 @@ function initSearch() {
     $$("#picker button").forEach((x) => x.classList.toggle("on", x === b));
     doSearch();
   });
+  // 미세조정 백본은 이미 저조도를 학습해 AdaBN이 오히려 해로움(results/finetune.csv) → 백본에 맞춰 기본값 전환
+  $("#backbone").addEventListener("change", () => {
+    S.adabn = $("#backbone").value !== "ft"; $("#t-adabn").setAttribute("aria-pressed", String(S.adabn));
+  });
   $("#t-adabn").addEventListener("click", () => {
     S.adabn = !S.adabn; $("#t-adabn").setAttribute("aria-pressed", String(S.adabn));
   });
   $("#btn-search").addEventListener("click", doSearch);
   $("#r-grid").addEventListener("click", (e) => { const c = e.target.closest(".card"); if (c) showCompare(Number(c.dataset.i)); });
+}
+
+let explainSeq = 0;
+async function loadExplain(r, x) {
+  const seq = ++explainSeq;
+  const res = await api("/api/ai_explain", { q_level: r.query.lvl, q_split: r.query.split, q_name: r.query.name,
+    g_level: x.glvl, g_name: x.name, causes: x.causes.join("|") }).catch((e) => ({ error: String(e) }));
+  if (seq !== explainSeq || !$("#ai-explain")) return;  // 그 사이 다른 카드를 누름
+  $("#ai-explain").classList.remove("wait");
+  $("#ai-explain span").textContent = res.text || `설명을 만들지 못했습니다 (${res.error || "응답 없음"})`;
+  if (res.model) $("#ai-explain b").textContent = `AI 오답 설명 · ${res.model}`;
 }
 
 /* ---------------- 2. 텍스트 검색 ---------------- */
@@ -168,12 +187,24 @@ function renderDetail() {
   $("#d-score").textContent = x.score.toFixed(2);
   $("#d-meta").textContent = `ID ${x.pid} · ${x.cam} · ${x.illum}`;
   $("#d-img").src = x.url;
-  $("#d-cap").textContent = x.caption;
+  $("#d-cap").textContent = `속성 기반: ${x.caption}`;
+  loadCaption(x);
   const a = x.attrs || {};
   $("#d-up").textContent = [a.upper_color, a.sleeve].filter(Boolean).join(" · ");
   $("#d-low").textContent = [a.lower_color, a.lower_type].filter(Boolean).join(" · ");
   $("#d-bag").textContent = a.bag || "";
   $("#d-hat").textContent = a.hat || "";
+}
+
+let capSeq = 0;
+async function loadCaption(x) {
+  const seq = ++capSeq;
+  $("#d-cap-ai").textContent = "사진을 보고 캡션을 만드는 중…";
+  $("#d-cap-head").textContent = "AI 시맨틱 캡션";
+  const res = await api("/api/ai_caption", { level: T.level, split: "gallery", name: x.name }).catch((e) => ({ error: String(e) }));
+  if (seq !== capSeq) return;
+  $("#d-cap-ai").textContent = res.text || `캡션을 만들지 못했습니다 (${res.error || "응답 없음"})`;
+  if (res.model) $("#d-cap-head").textContent = `AI 시맨틱 캡션 · ${res.model}`;
 }
 
 function initText() {

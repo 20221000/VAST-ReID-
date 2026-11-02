@@ -71,6 +71,7 @@ def main():
     ap.add_argument("--lambdas", nargs="+", type=float, default=LAMBDAS)
     ap.add_argument("--out", type=Path, default=ROOT / "results/hubness.csv")
     ap.add_argument("--feat", default="none", choices=["none", "adabn"], help="adabn: 저조도 특징에 AdaBN 모델 사용")
+    ap.add_argument("--prefix", default="osnet_x1_0", help="특징 캐시 모델 이름 (미세조정: osnet_x1_0-ft)")
     args = ap.parse_args()
     KS, BETAS, LAMBDAS = args.ks, args.betas, args.lambdas
     t0 = time.time()
@@ -83,8 +84,8 @@ def main():
              ("same", "extreme", "extreme"), ("cross", "extreme", "normal")]
     for proto, ql, gl in conds:
         # ---------- 검증 분할
-        tq, tqf = get_feats(model, data, ql, "train", DEV, cache, args.feat)
-        tg, tgf = get_feats(model, data, gl, "train", DEV, cache, args.feat)
+        tq, tqf = get_feats(model, data, ql, "train", DEV, cache, args.feat, args.prefix)
+        tg, tgf = get_feats(model, data, gl, "train", DEV, cache, args.feat, args.prefix)
         qi_idx, gi_idx = val_split(tq)
         vq, vg = [tq[i] for i in qi_idx], [tg[i] for i in gi_idx]
         vqf, vgf, ref = norm(tqf[qi_idx]), norm(tgf[gi_idx]), norm(tqf)
@@ -105,8 +106,8 @@ def main():
                     vqf, vgf, v_rg[k_star], beta, agr, lam, vq, vg)[0]["mAP"])
 
         # ---------- 테스트
-        qi, qf = get_feats(model, data, ql, "query", DEV, cache, args.feat)
-        gi, gf = get_feats(model, data, gl, "gallery", DEV, cache, args.feat)
+        qi, qf = get_feats(model, data, ql, "query", DEV, cache, args.feat, args.prefix)
+        gi, gf = get_feats(model, data, gl, "gallery", DEV, cache, args.feat, args.prefix)
         qf, gf = norm(qf), norm(gf)
         rg = r_gallery(gf, ref, k_star)  # 참조 = train (테스트와 ID 겹치지 않음)
         agr = {
@@ -120,7 +121,7 @@ def main():
         for name, beta, src, lam in methods:
             r, s = score_eval(qf, gf, rg, beta, agr[src] if src else None, lam, qi, gi)
             n_uniq, hub20 = hub_stats(s)
-            rows.append({"feat": args.feat, "method": name, "protocol": proto, "query_level": ql, "gallery_level": gl,
+            rows.append({"model": args.prefix, "feat": args.feat, "method": name, "protocol": proto, "query_level": ql, "gallery_level": gl,
                          "k": k_star, "beta": beta, "lambda": lam,
                          **{m: round(v, 6) if isinstance(v, float) else v for m, v in r.items()},
                          "top10_unique_gallery": n_uniq, "top20_hub_share": round(hub20, 4)})

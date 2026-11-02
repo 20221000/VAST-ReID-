@@ -55,9 +55,8 @@ def ev(dist, qi, gi):
     return evaluate_fast(dist, [x.pid for x in qi], [x.pid for x in gi], [x.camid for x in qi], [x.camid for x in gi])
 
 
-def hub_k(feat, proto, ql):
-    name = "hubness_adabn.csv" if feat == "adabn" else "hubness_wide.csv"
-    with open(ROOT / "results" / name, encoding="utf-8") as f:
+def hub_k(feat, proto, ql, hub_csv):
+    with open(hub_csv[feat], encoding="utf-8") as f:
         for r in csv.DictReader(f):
             if r["method"] == "csls" and r["protocol"] == proto and r["query_level"] == ql:
                 return int(r["k"])
@@ -65,6 +64,14 @@ def hub_k(feat, proto, ql):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--prefix", default="osnet_x1_0", help="특징 캐시 모델 이름 (미세조정: osnet_x1_0-ft)")
+    ap.add_argument("--hub-none", type=Path, default=ROOT / "results/hubness_wide.csv")
+    ap.add_argument("--hub-adabn", type=Path, default=ROOT / "results/hubness_adabn.csv")
+    ap.add_argument("--out", type=Path, default=ROOT / "results/kreciprocal.csv")
+    args = ap.parse_args()
+    hub_csv = {"none": args.hub_none, "adabn": args.hub_adabn}
     t0 = time.time()
     table = {int(k): v for k, v in json.loads(
         (ROOT / "annotations/person_attributes.json").read_text(encoding="utf-8"))["persons"].items()}
@@ -75,10 +82,10 @@ def main():
     rows = []
     for feat in ["none", "adabn"]:
         for proto, ql, gl in conds:
-            k = hub_k(feat, proto, ql)
+            k = hub_k(feat, proto, ql, hub_csv)
             # ---- 검증 분할: k-reciprocal 거리 위에서 β_kr, λ_kr 선택
-            tq, tqf = get_feats(model, data, ql, "train", DEV, cache, feat)
-            tg, tgf = get_feats(model, data, gl, "train", DEV, cache, feat)
+            tq, tqf = get_feats(model, data, ql, "train", DEV, cache, feat, args.prefix)
+            tg, tgf = get_feats(model, data, gl, "train", DEV, cache, feat, args.prefix)
             qi_idx, gi_idx = val_split(tq)
             vq, vg = [tq[i] for i in qi_idx], [tg[i] for i in gi_idx]
             vqf, vgf, ref = norm(tqf[qi_idx]), norm(tgf[gi_idx]), norm(tqf)
@@ -90,8 +97,8 @@ def main():
             beta = max(BETAS, key=lambda b: ev(v_d + b * v_rg[None, :], vq, vg)["mAP"])
             lam = max(LAMBDAS, key=lambda l: ev(v_d + beta * v_rg[None, :] - l * v_agr, vq, vg)["mAP"])
             # ---- 테스트
-            qi, qf = get_feats(model, data, ql, "query", DEV, cache, feat)
-            gi, gf = get_feats(model, data, gl, "gallery", DEV, cache, feat)
+            qi, qf = get_feats(model, data, ql, "query", DEV, cache, feat, args.prefix)
+            gi, gf = get_feats(model, data, gl, "gallery", DEV, cache, feat, args.prefix)
             qf, gf = norm(qf), norm(gf)
             rg = r_gallery(gf, ref, k)[None, :]
             agr = agreement(gt_rep([x.pid for x in qi], table),
@@ -100,13 +107,13 @@ def main():
             for name, dist, b, l in [("kr", d, 0.0, 0.0), ("kr+csls", d + beta * rg, beta, 0.0),
                                      ("kr+csls+witness-probe", d + beta * rg - lam * agr, beta, lam)]:
                 r = ev(dist, qi, gi)
-                rows.append({"feat": feat, "method": name, "protocol": proto, "query_level": ql, "gallery_level": gl,
+                rows.append({"model": args.prefix, "feat": feat, "method": name, "protocol": proto, "query_level": ql, "gallery_level": gl,
                              "k": k, "beta": b, "lambda": l, "k1": K1, "k2": K2, "kr_lambda": LAM,
                              **{m: round(v, 6) if isinstance(v, float) else v for m, v in r.items()}})
                 print(f"  {feat:5s} {proto:5s} {ql:7s}→{gl:7s} {name:22s} β={b:<4} λ={l:<4} "
                       f"R1 {r['rank1']*100:5.1f}  mAP {r['mAP']*100:5.1f}  mINP {r['mINP']*100:5.1f}", flush=True)
     print(f"[done] {time.time() - t0:.0f}s  GPU {gpu_temp()}°C")
-    out = ROOT / "results/kreciprocal.csv"
+    out = args.out
     with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()

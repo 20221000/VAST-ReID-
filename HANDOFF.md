@@ -406,8 +406,17 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - Gradio 데모(`demo/app.py`)는 이전 버전으로 유지. 배포(HF)는 보류.
 - 남은 작업: 발표용 그림(`tools/make_figures.py`), 발표 자료, README 데모 캡처, 리허설
 
-### k-reciprocal + 데모 조정 (11/2) — 현재 최고 결과
+### k-reciprocal + 데모 조정 (11/2)
 - `tools/kreciprocal.py` → `results/kreciprocal.csv` (표준값 k1=20 k2=6 λ=0.3, **원래 거리에 먼저 적용 후 CSLS·속성**). AdaBN + k-reciprocal + CSLS + 목격자 속성: **Low→Normal 90.3 / mAP 88.2**, Extreme→Normal 34.4 / 37.3.
 - AdaBN 없이 k-reciprocal은 손해(23.0 → 19.9).
 - 데모: `tools/build_demo_cache.py` → `outputs/demo/kr__*.npy` (재순위화 옵션용). 화면은 "시안 1440px + 비율 확대(zoom)" 버전으로 롤백 상태, 텍스트 검색 오른쪽 카드만 높이 맞춤.
 - 서버 재시작이 필요한 경우: results CSV 갱신, demo_core.py 수정 후 (lru_cache).
+
+### 저조도 미세조정 + AI 설명 기능 (11/2) — 현재 최고 결과
+- `tools/finetune.py` (train 3조도, 12 에폭, 7분) → `weights/osnet_x1_0_vast_lowlight_ft.pth`(git 제외), 특징 캐시 `outputs/features/osnet_x1_0-ft__*`, `results/finetune.csv`.
+- 조합: `hubness.py/kreciprocal.py --prefix osnet_x1_0-ft` → `results/hubness_ft*.csv`, `results/kreciprocal_ft.csv`.
+  **미세조정 + k-reciprocal + CSLS + 속성(AdaBN 없음): Low→Normal 92.9 / 89.1, Extreme→Normal 79.2 / 76.9.** Normal→Normal은 93.5(사전학습 95.5).
+- 미세조정 모델에는 AdaBN이 해로움 → 데모에서 미세조정 백본 선택 시 AdaBN 자동 off.
+- 데모: 백본 선택(기본 미세조정), `tools/build_demo_cache.py --prefix osnet_x1_0-ft` → `outputs/demo/kr__osnet_x1_0-ft__*.npy`. 벤치마크에 미세조정 2행 추가.
+- AI(로컬 전용, OpenAI gpt-4.1-mini): `/api/ai_explain`(오답 설명), `/api/ai_caption`(시맨틱 캡션), 서버 실행당 120회 상한.
+- 미세조정 백본의 hub 빈도(`hub_freq`)는 없음 → 실패 원인 칩에서 hub 항목만 생략됨.

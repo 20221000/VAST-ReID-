@@ -37,15 +37,18 @@ ATTRS = ["upper_color", "lower_color", "sleeve", "lower_type", "bag", "hat"]
 
 
 def get_feats(model, data: Path, level: str, split: str, device: str, cache_dir: Path,
-              tag: str = "none") -> tuple[list[Item], torch.Tensor]:
-    """tag='adabn' 이면 저조도 이미지는 tools/adabn.py 가 만든 AdaBN 특징 캐시 사용 (normal은 원래 모델)."""
+              tag: str = "none", prefix: str = "osnet_x1_0") -> tuple[list[Item], torch.Tensor]:
+    """tag='adabn' 이면 저조도 이미지는 AdaBN 특징 캐시 사용 (normal은 원래 모델).
+    prefix: 특징 캐시의 모델 이름 (기본 osnet_x1_0, 저조도 미세조정은 osnet_x1_0-ft — tools/finetune.py가 생성)."""
     items = list_split(data, level, split)
     if tag == "adabn" and level != "normal":
-        cp = cache_dir / f"osnet_x1_0__adabn-{level}__{level}__{split}.pt"
+        cp = cache_dir / f"{prefix}__adabn-{level}__{level}__{split}.pt"
         if not cp.exists():
-            raise FileNotFoundError(f"{cp} 없음 → python tools/adabn.py 먼저 실행")
+            raise FileNotFoundError(f"{cp} 없음 → tools/adabn.py 또는 tools/finetune.py 먼저 실행")
         return items, torch.load(cp, weights_only=True)["feats"]
-    cp = cache_dir / f"osnet_x1_0__none__{level}__{split}.pt"
+    cp = cache_dir / f"{prefix}__none__{level}__{split}.pt"
+    if prefix != "osnet_x1_0" and not cp.exists():  # 다른 모델의 특징을 기본 모델로 계산하지 않도록
+        raise FileNotFoundError(f"{cp} 없음 → tools/finetune.py 먼저 실행")
     if cp.exists():
         d = torch.load(cp, weights_only=True)
         if d["n"] == len(items):

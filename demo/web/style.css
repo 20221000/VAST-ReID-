@@ -171,3 +171,8 @@ table.trk th:first-child, table.trk td:first-child { text-align: left; }
   .cards4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mrow .n { flex-basis: 100%; }
 }
+
+/* 생성형 AI 설명 */
+.aibox { flex: 1 1 100%; background: #FFF8EA; border: 1px solid #F7DFAE; border-radius: 12px; padding: 14px 16px; line-height: 1.65; }
+.aibox b { display: block; font-size: 12px; font-weight: 600; color: var(--warn); margin-bottom: 6px; }
+.aibox.wait span { color: var(--sub); }

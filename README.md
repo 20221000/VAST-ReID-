@@ -10,7 +10,7 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 ![low-light grid](docs/figures/lowlight_grid.jpg)
 
 ## 핵심 결과 (요약)
-> 모든 수치는 실제 실행 결과이며 `results/*.csv`에 있습니다. OSNet(Market-1501 사전학습)으로 추론만 했습니다.
+> 모든 수치는 실제 실행 결과이며 `results/*.csv`에 있습니다. OSNet(Market-1501 사전학습) 추론에서 시작해, 마지막에 저조도 미세조정(12 에폭, 약 7분)을 더했습니다.
 
 | 조건 | Rank-1 | mAP |
 |---|---|---|
@@ -23,7 +23,9 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 | + CSLS + 속성 재순위화 | 54.9 | 42.2 |
 | + AdaBN (저조도 이미지로 BN 통계만 재추정) | 85.3 | 71.0 |
 | + AdaBN + CSLS + 속성 재순위화 | 86.8 | 73.3 |
-| **+ AdaBN + k-reciprocal + CSLS + 속성** | **90.3** | **88.2** |
+| + AdaBN + k-reciprocal + CSLS + 속성 | 90.3 | 88.2 |
+| + 저조도 미세조정 (train 3조도, 12 에폭) | 88.8 | 70.5 |
+| **+ 미세조정 + k-reciprocal + CSLS + 속성** | **92.9** | **89.1** |
 
 - 어두워지면 Rank-1이 94.5 → 48.5로 거의 절반이 됩니다.
 - 사진을 밝게 만드는 전처리는 노이즈까지 증폭시켜 오히려 성능을 떨어뜨렸습니다.
@@ -31,6 +33,8 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 - 검색 단계에서 hub를 깎는 CSLS와 속성 정보를 더하면 야간→주간 Rank-1이 **23.0 → 54.9**로 회복됩니다.
 - 원인 자체(모델 내부 정규화 통계가 밝은 사진에 맞춰져 있음)를 고치는 **AdaBN**을 적용하면 **85.3**, CSLS·속성까지 합치면 **86.8**,
   여기에 ReID 표준 재순위화인 **k-reciprocal**을 더하면 **90.3 / mAP 88.2**까지 회복됩니다. 극저조도→주간도 0.0 → 35.6이 됩니다. (합성 저조도라 AdaBN 효과가 과대평가됐을 수 있음, [한계](#한계) 참고)
+- 학습 없이는 극저조도가 35.6에서 멈춰, train 이미지만으로 **저조도 미세조정**을 했습니다. 극저조도→주간 Rank-1이 **0.0 → 79.2 (mAP 76.9)**,
+  야간→주간이 **92.9**가 됩니다. 대신 밝은 사진끼리는 94.5 → 91.3(재순위화 포함 95.5 → 93.5)으로 조금 내려갑니다. 자세한 내용은 [저조도 미세조정](#저조도-미세조정-resultsfinetunecsv-resultskreciprocal_ftcsv).
 - 표의 "어두운 → 밝은" 아래 행들은 재순위화를 위해 코사인 유사도 기준입니다. 유클리드 거리 기준 베이스라인은 25.5 / 20.3입니다.
 
 ---
@@ -41,9 +45,9 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 |---|---|---|
 | 데이터 | 실촬영 + 합성 | **공개 데이터셋(Market-1501) + 저조도 합성만** (실촬영 생략) |
 | 실행 환경 | Google Colab | 로컬 PC (WSL2 Ubuntu, RTX 5080, PyTorch cu128) |
-| 모델 | 일부 직접 학습 | **딥러닝 학습 없음**: 사전학습 모델 추론 + 속성용 작은 선형 분류기만 |
+| 모델 | 일부 직접 학습 | 사전학습 모델 추론 + 속성용 선형 분류기, 마지막에 **OSNet 저조도 미세조정(12 에폭, 7분)** 추가 |
 | 속성 라벨 | VLM 라벨링 + 사람 검수 | 공개 속성 라벨(Market-1501 Attribute)에서 6개 선택 |
-| 개선 방법 | 저조도 개선(Zero-DCE) 중심 | Zero-DCE는 실패 확인 → **AdaBN + hubness 완화(CSLS) + 속성 재순위화** |
+| 개선 방법 | 저조도 개선(Zero-DCE) 중심 | Zero-DCE는 실패 확인 → **AdaBN + hubness 완화(CSLS) + 속성 재순위화 + k-reciprocal**, 이후 미세조정 |
 | AI API | 라벨링 도구 | 호출 수가 적은 곳에만 사용 (아래 참고) |
 | 트래킹 | YOLO + ByteTrack 데모 | MOT17 3개 시퀀스에 같은 저조도 합성 → ByteTrack vs BoT-SORT+OSNet(+AdaBN) 정량 평가 |
 
@@ -120,6 +124,10 @@ Low→Normal에서 상위 20장 점유율은 CSLS 적용 시 22.2% → 3.3%, Ada
 |---|---|---|
 | 비전 LLM 저조도 실험 | 사진을 보여주고 6개 속성을 JSON으로 답하게 해 조도별 정확도를 비교 | 50명 × 3조도 × 2모델 = 300회 |
 | 데모 텍스트 검색 (선택, 로컬 전용) | "흰 반팔에 백팩 멘 사람" → 속성 JSON | 검색 1번에 1회 |
+| 데모 시맨틱 캡션 (로컬 전용) | 텍스트 검색에서 고른 인물 사진 → 옷차림·소지품을 자연어 1~2문장으로 | 인물 선택 1번에 1회 |
+| 데모 오답 설명 (로컬 전용) | 쿼리와 잘못 나온 사진을 함께 보여주고 왜 헷갈렸는지 설명 (계산된 실패 원인을 힌트로 제공) | 오답 카드 클릭 1번에 1회 |
+
+캡션·설명은 옷차림·색·소지품·조명만 말하도록 지시하고 성별·나이·인종 등은 언급하지 않게 했습니다. 같은 사진은 캐시에서 재사용하고, 서버 실행당 최대 120회로 제한합니다.
 
 **ReID 검색 자체를 API로 하지 않은 이유**: query 3,368장을 gallery 15,913장과 모두 비교하면 수천만 번 호출이 필요해
 비현실적이고, 표준 지표(Rank-1, mAP)로 비교할 수도 없습니다. 대량 계산은 로컬 모델이, 사람의 말을 이해하는 일과
@@ -207,14 +215,41 @@ BoT-SORT의 외형 특징은 우리 OSNet(Market-1501 사전학습)으로 직접
 
 ---
 
+### 저조도 미세조정 (`results/finetune.csv`, `results/kreciprocal_ft.csv`)
+학습 없는 방법으로는 극저조도가 35.6에서 더 오르지 않아, 마지막 단계로 OSNet을 저조도에 맞게 추가 학습했습니다 (`tools/finetune.py`).
+
+- 데이터: Market-1501 **train 751명만** normal·low·extreme 세 조도로 섞어 38,808장. query·gallery는 학습에 쓰지 않음.
+- 설정: Market 학습 가중치에서 출발, 라벨 스무딩 분류 손실, AdamW(lr 1e-4), 12 에폭 고정(테스트 성능으로 고르지 않음), 좌우 반전·random erasing.
+- 시간: 에폭당 34초, 총 6분 45초. GPU 59~61°C. 2 에폭 샘플로 먼저 시간·온도를 확인했습니다.
+
+야간 → 주간 gallery, Rank-1 / mAP
+
+| 방법 | Normal → Normal | Low → Normal | Extreme → Normal |
+|---|---|---|---|
+| 사전학습 OSNet | 94.5 / 82.6 | 23.0 / 18.7 | 0.0 / 0.2 |
+| 사전학습 + AdaBN + k-reciprocal + CSLS + 속성 (기존 최고) | 95.5 / 92.8 | 90.3 / 88.2 | 34.4 / 37.3 |
+| 미세조정 OSNet | 91.3 / 75.5 | 88.8 / 70.5 | 65.4 / 47.1 |
+| 미세조정 + AdaBN | 91.3 / 75.5 | 88.5 / 70.3 | 56.7 / 40.2 |
+| 미세조정 + CSLS + 속성 | 91.9 / 77.7 | 88.4 / 70.8 | 68.8 / 52.0 |
+| **미세조정 + k-reciprocal + CSLS + 속성** | 93.5 / 90.1 | **92.9 / 89.1** | **79.2 / 76.9** |
+
+- 극저조도의 한계를 넘은 것은 **학습**이었습니다. 노이즈 속에서도 사람을 구분하는 특징을 모델이 직접 배웠기 때문입니다.
+- 미세조정 모델에는 **AdaBN이 오히려 해롭습니다**(65.4 → 56.7). 이미 세 조도를 함께 보며 학습해 BN 통계가 섞인 상태로 맞춰졌기 때문입니다. 데모는 미세조정 백본을 고르면 AdaBN을 끕니다.
+- 학습 없이 찾았던 CSLS·속성·k-reciprocal은 미세조정 위에서도 그대로 더해집니다(65.4 → 79.2).
+- 대가: 밝은 사진끼리의 성능이 조금 내려갑니다(94.5 → 91.3).
+- 주의: 학습에 쓴 저조도와 평가 저조도가 **같은 합성 방식**이라, 실제 야간 영상에서는 효과가 더 작을 수 있습니다([한계](#한계)).
+
+---
+
 ## 데모
 `python demo/server.py` → http://127.0.0.1:7860 (디자인 시안 3화면을 그대로 구현한 웹 데모, FastAPI)
 
 1. **이미지 검색**: 저조도 쿼리를 고르면 주간 gallery에서 Top-10을 찾고 정답/오답, Rank-1, AP, 정답 첫 순위를 표시합니다.
-   저조도 보정(AdaBN), 모델(Hub 보정 CSLS), 속성 필터(목격자 진술 재순위화)를 바꿔 가며 비교할 수 있고,
-   오답 카드는 실제 실패 원인(사람이 아닌 이미지, hub 이미지, 유사 의복, 조도)을 보여줍니다.
+   백본(사전학습 / 저조도 미세조정), 저조도 보정(AdaBN), 거리 보정(CSLS, k-reciprocal), 속성 필터(목격자 진술 재순위화)를 바꿔 가며 비교할 수 있고,
+   오답 카드는 실제 실패 원인(사람이 아닌 이미지, hub 이미지, 유사 의복, 조도)과 **AI 오답 설명**(비전 LLM, 로컬 전용)을 보여줍니다.
+   샘플 24개 기준 Extreme Rank-1: 사전학습 최고 조합 10/24 → 미세조정 조합 16/24.
    예: 샘플 #0 극저조도 쿼리의 정답 순위 2,548위 → AdaBN + CSLS 적용 시 1위.
-2. **텍스트 검색**: 인상착의 문장 → 속성 추출(키워드 규칙, 로컬에서는 LLM 선택 가능) → 속성 일치 순 검색, 선택한 인물로 이미지 재검색.
+2. **텍스트 검색**: 인상착의 문장 → 속성 추출(키워드 규칙, 로컬에서는 LLM 선택 가능) → 속성 일치 순 검색, 선택한 인물의 **AI 시맨틱 캡션**, 그 인물로 이미지 재검색.
 3. **벤치마크**: `results/*.csv`의 실제 값으로 핵심 지표, 방법 × 조도 막대그래프, 실패 원인 분포, 저조도 MOT17 트래킹 프레임과 지표를 표시합니다.
 
 `demo/app.py`(Gradio)는 이전 버전 데모, `space/app.py`는 공개용 축소판입니다.
@@ -251,7 +286,7 @@ kaggle datasets download iiierie/market-1501-v15-09-15 -p data/raw --unzip
 python tools/synthesize_lowlight.py --src data/raw/Market-1501-v15.09.15 --out data/vast \
     --grid docs/figures/lowlight_grid.jpg
 
-# 실험 (사전학습 모델 추론 + 속성용 선형 분류기만, 딥러닝 학습 없음)
+# 실험 (사전학습 모델 추론 + 속성용 선형 분류기)
 python tools/evaluate.py --out results/baseline.csv
 python tools/evaluate.py --enhance none gamma clahe zerodce --out results/enhance.csv
 python tools/build_annotations.py
@@ -260,6 +295,16 @@ python tools/rerank.py --attr-source witness-probe
 python tools/adabn.py
 python tools/kreciprocal.py
 python tools/build_demo_cache.py   # 데모 재순위화용 캐시
+
+# 저조도 미세조정 (약 7분) + 조합 평가
+python tools/finetune.py --epochs 2 --no-extract --out weights/osnet_ft_sample.pth   # 샘플: 시간·온도 확인
+python tools/finetune.py                                                            # → results/finetune.csv
+G="--ks 10 50 100 --betas 0 0.25 0.5 0.75 1 1.25 1.5 2"
+python tools/hubness.py --prefix osnet_x1_0-ft --feat none  $G --out results/hubness_ft.csv
+python tools/hubness.py --prefix osnet_x1_0-ft --feat adabn $G --out results/hubness_ft_adabn.csv
+python tools/kreciprocal.py --prefix osnet_x1_0-ft --hub-none results/hubness_ft.csv \
+    --hub-adabn results/hubness_ft_adabn.csv --out results/kreciprocal_ft.csv
+python tools/build_demo_cache.py --prefix osnet_x1_0-ft
 python tools/synthesize_lowlight.py --mode mot --src data/raw/mot17/MOT17/train --out data/vast_mot \
     --sequences MOT17-02-FRCNN MOT17-04-FRCNN MOT17-09-FRCNN
 python tools/track_mot.py      # TrackEval은 공식 레포에서 설치
@@ -270,7 +315,7 @@ python tools/hubness.py --ks 10 50 100 --betas 0 0.25 0.5 0.75 1 1.25 1.5 2 3 \
 python tools/failure_analysis.py
 python demo/server.py
 ```
-가중치: OSNet은 torchreid Model Zoo의 Market-1501 학습 가중치(`weights/osnet_x1_0_market1501.pth`),
+가중치: OSNet은 torchreid Model Zoo의 Market-1501 학습 가중치(`weights/osnet_x1_0_market1501.pth`), 미세조정 가중치는 `weights/osnet_x1_0_vast_lowlight_ft.pth`(로컬 생성, 레포 미포함),
 Zero-DCE는 공식 레포의 `Epoch99.pth`(`weights/zerodce_epoch99.pth`)를 사용합니다.
 
 ## 레포 구조
@@ -293,7 +338,8 @@ docs/         개발 일지(DEVLOG.md), 그림
 ## 한계
 - 저조도는 합성입니다. 실제 야간 CCTV는 카메라 내부에서 노이즈를 제거하므로, 합성 노이즈가 실제보다 거칠 수 있습니다.
 - **AdaBN 효과는 과대평가됐을 수 있습니다.** 합성 저조도는 이미지 전체에 같은 방식으로 적용된 변화라, 정규화 통계를 다시 맞추는 AdaBN과 특히 잘 맞습니다. 실제 야간 영상은 조명이 고르지 않고(가로등, 그림자) 카메라마다 처리 방식이 달라 효과가 작을 수 있습니다.
-- Extreme 등급은 현재 설정에서 대부분의 방법이 무작위 수준에 가까워, 합성 강도 재조정을 검토 중입니다.
+- **미세조정 결과도 과대평가됐을 수 있습니다.** 학습용 저조도와 평가용 저조도가 같은 합성 모델(노출·노이즈 범위)에서 나와, 모델이 이 합성 노이즈의 특성 자체를 배웠을 수 있습니다. 실제 야간 영상 검증이 필요합니다.
+- 미세조정은 밝은 사진 성능을 조금 떨어뜨립니다(Rank-1 94.5 → 91.3).
 - AdaBN은 적응용 이미지가 평가 환경과 조도 외에는 같아야 효과가 있습니다 (YOLO AdaBN 실패 사례).
 - λ, β 검증에 쓴 train 이미지는 OSNet이 학습한 이미지라 검증 점수가 과대평가됩니다(보수적인 λ 선택 쪽으로 치우침).
 - 비전 LLM 실험은 50명 샘플이라 오차 범위가 큽니다.
