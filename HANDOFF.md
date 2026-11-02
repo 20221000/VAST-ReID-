@@ -341,3 +341,7 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - `results/attr_acc_clip.csv`: zero-shot 평균 정확도 normal 52.8 / low 46.2 / extreme 26.1. 소매·가방·모자는 다수 클래스보다 낮음.
 - `results/rerank_clip.csv`, `results/rerank_witness.csv`: **low→normal R1 23.0 → 27.8(clip) / 29.2(witness)**. 처음으로 확인된 개선. same-level은 +1%p 이하.
 - 다음 후보: (1) 속성 예측 정확도 개선 (CLIP 특징 위 선형 분류기 = 수 초짜리 로지스틱 회귀. 딥러닝 학습은 아님, 사용자 확인 필요), (2) VLM(Grok/GPT) 저조도 속성 정확도 비교 실험(샘플, API), (3) 데모.
+
+### A: 선형 분류기 속성 (11/2)
+- `tools/attr_probe.py` (CLIP 특징 + 로지스틱 회귀, ID 기준 5-fold 교차 예측) → `outputs/attr_probs/probe__*.npz`, `results/attr_acc_probe.csv` (평균 정확도 78.3 / 75.3 / 65.1)
+- `tools/rerank.py --attr-source probe | witness-probe` → low→normal R1 **29.6 / 34.3** (외형만 23.0). λ가 0.5(범위 끝)에서 선택됨 → 범위 확장 검토.

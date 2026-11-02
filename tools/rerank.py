@@ -11,6 +11,7 @@
     oracle  : query·gallery 모두 정답 속성 (속성이 완벽히 주어졌을 때의 상한선, 실제 시스템 아님)
     clip    : query·gallery 모두 CLIP zero-shot 예측 (완전 자동)
     witness : query는 사람이 묘사한 속성(정답으로 대체), gallery는 CLIP 예측 (목격자 진술 + 영상 검색 시나리오)
+    probe / witness-probe : 위와 같되 예측을 CLIP 특징 위 선형 분류기(tools/attr_probe.py)로
 - 특징은 outputs/features/ 에 캐시 (L2 정규화 전 원본).
 """
 from __future__ import annotations
@@ -66,8 +67,9 @@ def gt_rep(pids: list[int], table: dict[int, dict]) -> AttrRep:
     return rep
 
 
-def clip_rep(level: str, split: str, items: list[Item], idx=None) -> AttrRep:
-    d = np.load(ROOT / f"outputs/attr_probs/clip_ViT-B-16__{level}__{split}.npz")
+def clip_rep(level: str, split: str, items: list[Item], idx=None, pred: str = "clip") -> AttrRep:
+    name = "clip_ViT-B-16" if pred == "clip" else "probe"
+    d = np.load(ROOT / f"outputs/attr_probs/{name}__{level}__{split}.npz")
     if not np.array_equal(d["pids"], np.array([x.pid for x in items])):
         raise RuntimeError(f"CLIP 확률과 이미지 목록 불일치: {level}/{split} (tools/clip_attributes.py 재실행)")
     sel = slice(None) if idx is None else np.asarray(idx)
@@ -109,12 +111,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", type=Path, default=ROOT / "data/vast")
     ap.add_argument("--weights", type=Path, default=ROOT / "weights/osnet_x1_0_market1501.pth")
-    ap.add_argument("--attr-source", default="oracle", choices=["oracle", "clip", "witness"])
+    ap.add_argument("--attr-source", default="oracle", choices=["oracle", "clip", "witness", "probe", "witness-probe"])
     ap.add_argument("--levels", nargs="+", default=["normal", "low", "extreme"])
     ap.add_argument("--lambdas", nargs="+", type=float, default=[0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5])
     ap.add_argument("--out", type=Path, default=None, help="기본: results/rerank_<attr-source>.csv")
     args = ap.parse_args()
     args.out = args.out or ROOT / f"results/rerank_{args.attr_source}.csv"
+    pred = "probe" if "probe" in args.attr_source else "clip"
+    gt_query = args.attr_source in ("oracle", "witness", "witness-probe")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     persons = json.loads((ROOT / "annotations/person_attributes.json").read_text(encoding="utf-8"))["persons"]
@@ -133,20 +137,20 @@ def main():
             qi_idx, gi_idx = val_split(tq_items)
             vq = [tq_items[i] for i in qi_idx]
             vg = [tg_items[i] for i in gi_idx]
-            vqa = (gt_rep([x.pid for x in vq], table) if args.attr_source in ("oracle", "witness")
-                   else clip_rep(ql, "train", tq_items, qi_idx))
+            vqa = (gt_rep([x.pid for x in vq], table) if gt_query
+                   else clip_rep(ql, "train", tq_items, qi_idx, pred))
             vga = (gt_rep([x.pid for x in vg], table) if args.attr_source == "oracle"
-                   else clip_rep(gl, "train", tg_items, gi_idx))
+                   else clip_rep(gl, "train", tg_items, gi_idx, pred))
             val = {lam: run(tq_f[qi_idx], tg_f[gi_idx], vq, vg, vqa, vga, lam, device)["mAP"] for lam in args.lambdas}
             best = max(val, key=val.get)
 
             # ---- 테스트셋 평가 (λ=0, λ*)
             qi, qf = get_feats(model, args.data, ql, "query", device, cache)
             gi, gf = get_feats(model, args.data, gl, "gallery", device, cache)
-            qa = (gt_rep([x.pid for x in qi], table) if args.attr_source in ("oracle", "witness")
-                  else clip_rep(ql, "query", qi))
+            qa = (gt_rep([x.pid for x in qi], table) if gt_query
+                  else clip_rep(ql, "query", qi, pred=pred))
             ga = (gt_rep([x.pid for x in gi], table) if args.attr_source == "oracle"
-                  else clip_rep(gl, "gallery", gi))
+                  else clip_rep(gl, "gallery", gi, pred=pred))
             for tag, lam in [("cosine", 0.0), ("rerank", best)]:
                 r = run(qf, gf, qi, gi, qa, ga, lam, device)
                 rows.append({"attr_source": args.attr_source, "method": tag, "lambda": lam, "protocol": proto,

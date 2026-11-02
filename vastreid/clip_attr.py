@@ -90,10 +90,14 @@ class ClipAttr:
     def predict(self, paths: list[Path], batch: int = 256, workers: int = 8) -> dict[str, np.ndarray]:
         dl = torch.utils.data.DataLoader(_DS(paths), batch_size=batch, num_workers=workers, pin_memory=True)
         out = {a: [] for a in ATTR_VALUES}
+        feats = []
         for x in dl:
             with torch.autocast("cuda", dtype=torch.float16):
                 f = self.model.encode_image(x.to(self.device, non_blocking=True))
             f = torch.nn.functional.normalize(f.float(), dim=-1)
+            feats.append(f.half().cpu())
             for a, t in self.text.items():
                 out[a].append((self.scale * f @ t.T).softmax(-1).cpu())
-        return {a: torch.cat(v).numpy() for a, v in out.items()}
+        res = {a: torch.cat(v).numpy() for a, v in out.items()}
+        res["feat"] = torch.cat(feats).numpy()  # L2 정규화된 CLIP 이미지 특징 (선형 분류기용)
+        return res
