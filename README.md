@@ -202,12 +202,28 @@ BoT-SORT의 외형 특징은 우리 OSNet(Market-1501 사전학습)으로 직접
 ---
 
 ## 데모
-`python demo/app.py` → http://127.0.0.1:7860
+`python demo/server.py` → http://127.0.0.1:7860 (디자인 시안 3화면을 그대로 구현한 웹 데모, FastAPI)
 
-1. **이미지 검색**: 저조도 query를 고르거나 업로드 → 주간 gallery Top-10, 정답/오답 표시. AdaBN, Hub 보정(CSLS), 목격자 속성 재순위화를 켜고 끌 수 있음.
-   예: 샘플 #0 극저조도 query의 정답 순위 2,548위 → AdaBN 적용 시 1위.
-2. **텍스트 검색**: 인상착의 문장 → 속성 추출 → 속성이 일치하는 사람 검색.
-3. **벤치마크**: `results/*.csv`를 읽어 그래프로 표시 (수치 하드코딩 없음).
+1. **이미지 검색**: 저조도 쿼리를 고르면 주간 gallery에서 Top-10을 찾고 정답/오답, Rank-1, AP, 정답 첫 순위를 표시합니다.
+   저조도 보정(AdaBN), 모델(Hub 보정 CSLS), 속성 필터(목격자 진술 재순위화)를 바꿔 가며 비교할 수 있고,
+   오답 카드는 실제 실패 원인(사람이 아닌 이미지, hub 이미지, 유사 의복, 조도)을 보여줍니다.
+   예: 샘플 #0 극저조도 쿼리의 정답 순위 2,548위 → AdaBN + CSLS 적용 시 1위.
+2. **텍스트 검색**: 인상착의 문장 → 속성 추출(키워드 규칙, 로컬에서는 LLM 선택 가능) → 속성 일치 순 검색, 선택한 인물로 이미지 재검색.
+3. **벤치마크**: `results/*.csv`의 실제 값으로 핵심 지표, 방법 × 조도 막대그래프, 실패 원인 분포, 저조도 MOT17 트래킹 프레임과 지표를 표시합니다.
+
+`demo/app.py`(Gradio)는 이전 버전 데모, `space/app.py`는 공개용 축소판입니다.
+
+### 실패 원인 분석 (`results/failure_causes.csv`)
+Rank-1을 놓친 쿼리에서 1위로 잘못 나온 이미지의 원인 (gallery: 주간).
+
+| 설정 | 쿼리 | Rank-1 오답 | 사람이 아닌 이미지 | hub | 유사 의복 | 기타 |
+|---|---|---|---|---|---|---|
+| OSNet | Low | 2,595 | 40.1% | 37.8% | 2.9% | 19.2% |
+| OSNet | Extreme | 3,368 | 88.7% | 10.8% | 0.0% | 0.4% |
+| AdaBN + CSLS | Low | 502 | 20.3% | 0.0% | 18.7% | 61.0% |
+| AdaBN + CSLS | Extreme | 2,405 | 18.5% | 0.0% | 7.3% | 74.2% |
+
+어두운 쿼리는 원래 사람이 아닌 이미지와 hub로 쏠리지만, AdaBN + CSLS 후에는 hub가 사라지고 사람도 헷갈릴 만한 유사 의복 오류의 비중이 커집니다.
 
 ---
 
@@ -243,7 +259,8 @@ python tools/hubness.py --ks 10 50 100 --betas 0 0.25 0.5 0.75 1 1.25 1.5 2 3 \
     --lambdas 0 0.1 0.2 0.3 0.5 0.75 1 1.5 2 --feat adabn --out results/hubness_adabn.csv
 
 # 데모
-python demo/app.py
+python tools/failure_analysis.py
+python demo/server.py
 ```
 가중치: OSNet은 torchreid Model Zoo의 Market-1501 학습 가중치(`weights/osnet_x1_0_market1501.pth`),
 Zero-DCE는 공식 레포의 `Epoch99.pth`(`weights/zerodce_epoch99.pth`)를 사용합니다.
@@ -255,7 +272,7 @@ tools/        실행 스크립트 (합성, 평가, 속성, 재순위화, hubness
 vastreid/     공용 모듈 (데이터, 지표, 특징 추출, 개선 전처리, CLIP 속성, LLM 래퍼)
 annotations/  ID별 속성 6개 + 캡션 (person_attributes.json)
 results/      실험 결과 CSV
-demo/         Gradio 데모 (로컬)
+demo/         웹 데모 (server.py + web/, 디자인 시안 구현) · Gradio 이전 버전(app.py)
 space/        Hugging Face Spaces 공개판 (numpy만 사용, 데이터 팩은 tools/build_space.py로 생성)
 docs/         개발 일지(DEVLOG.md), 그림
 ```

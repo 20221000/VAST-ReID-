@@ -399,3 +399,9 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - `tools/track_mot.py --det-adabn` (적응용 `data/vast_mot_adapt/{level}/MOT17-11-FRCNN`) → `results/tracking_yolo_adabn.csv`: 모든 조도에서 악화 (장면 차이 때문). DEVLOG에 부정적 결과로 기록.
 - `tools/build_space.py` → `space/data/` (git 제외), `space/app.py` (numpy 전용 Gradio). HF 계정 `krskulk`, 토큰은 `.env`의 HF_TOKEN.
 - **Gradio Space는 PRO 필요(402)** → 사용자 결정 대기: A 정적 HTML/JS Space(권장, 무료) / B Gradio-Lite / C PRO 구독. 공개 범위도 결정 필요(비공개 권장).
+
+### 웹 데모 (11/2) — 디자인 시안 구현
+- 실행: `python demo/server.py` → http://127.0.0.1:7860 (화면 `demo/web/`, 로직 `vastreid/demo_core.py`)
+- `tools/failure_analysis.py` → `results/failure_causes.csv`, `outputs/demo/hub_freq__*.npy` (데모 실패 원인 칩에 필요)
+- Gradio 데모(`demo/app.py`)는 이전 버전으로 유지. 배포(HF)는 보류.
+- 남은 작업: 발표용 그림(`tools/make_figures.py`), 발표 자료, README 데모 캡처, 리허설
