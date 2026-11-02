@@ -20,6 +20,6 @@ python-dotenv>=1.0
 # torchreid          # git+https://github.com/KaiyangZhou/deep-person-reid.git
 # ultralytics        # YOLO + ByteTrack/BoT-SORT
 # trackeval          # git+https://github.com/JonathonLuiten/TrackEval.git
-# gradio
+gradio>=5.0
 open_clip_torch>=3.0   # CLIP zero-shot 속성 예측
 scikit-learn>=1.4     # CLIP 특징 위 선형 분류기(속성)

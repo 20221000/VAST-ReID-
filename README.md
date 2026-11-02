@@ -73,6 +73,15 @@ kaggle datasets download iiierie/market-1501-v15-09-15 -p data/raw --unzip
 # 저조도 합성: data/vast/{normal,low,extreme}/{train,query,gallery}
 python tools/synthesize_lowlight.py --src data/raw/Market-1501-v15.09.15 --out data/vast \
     --grid docs/figures/lowlight_grid.jpg
+
+# 실험 (사전학습 모델 추론 + 속성용 선형 분류기만, 딥러닝 학습 없음)
+python tools/evaluate.py --out results/baseline.csv
+python tools/build_annotations.py
+python tools/clip_attributes.py && python tools/attr_probe.py
+python tools/rerank.py --attr-source witness-probe
+
+# 데모
+python demo/app.py   # http://127.0.0.1:7860
 ```
 
 ![low-light grid](docs/figures/lowlight_grid.jpg)
