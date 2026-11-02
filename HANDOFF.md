@@ -420,3 +420,4 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - 데모: 백본 선택(기본 미세조정), `tools/build_demo_cache.py --prefix osnet_x1_0-ft` → `outputs/demo/kr__osnet_x1_0-ft__*.npy`. 벤치마크에 미세조정 2행 추가.
 - AI(로컬 전용, OpenAI gpt-4.1-mini): `/api/ai_explain`(오답 설명), `/api/ai_caption`(시맨틱 캡션), 서버 실행당 120회 상한.
 - 미세조정 백본의 hub 빈도(`hub_freq`)는 없음 → 실패 원인 칩에서 hub 항목만 생략됨.
+- 목격자 속성 붕괴 수정(11/2): 데모 CSLS 경로가 고정 λ=0.5를 쓰던 문제 → `demo_core.csls_params`로 검증값 사용 + 속성 점수 × n/6. DEVLOG 시행착오 17.

@@ -109,11 +109,26 @@ def samples(level: str) -> list[dict]:
 
 
 def _agreement(choices: dict, gp: dict) -> np.ndarray | None:
+    """목격자 진술 속성 일치도. λ는 속성 6개 평균 기준으로 검증했으므로, 입력한 속성 수 n에 맞춰 n/6을 곱해
+    속성 하나당 가중치를 일정하게 유지 (속성 1~2개만 입력해도 그 하나가 점수를 좌우하지 않도록)."""
     terms = []
     for k, v in choices.items():
         if v and v in ATTR_VALUES.get(k, []):
-            terms.append(gp[k] @ np.eye(len(ATTR_VALUES[k]), dtype=np.float32)[ATTR_VALUES[k].index(v)])
-    return np.mean(terms, axis=0) if terms else None
+            terms.append(gp[k][:, ATTR_VALUES[k].index(v)])
+    return np.mean(terms, axis=0) * len(terms) / len(ATTR_VALUES) if terms else None
+
+
+_HUB_CSV = {(BASE, "none"): "hubness_wide.csv", (BASE, "adabn"): "hubness_adabn.csv",
+            (FT, "none"): "hubness_ft.csv", (FT, "adabn"): "hubness_ft_adabn.csv"}
+
+
+@lru_cache(maxsize=None)
+def csls_params(q_level: str, g_level: str, feat: str, prefix: str = BASE) -> dict | None:
+    """tools/hubness.py가 train 검증 분할에서 고른 k, β, λ (CSLS + 목격자 속성)."""
+    proto = "same" if q_level == g_level else "cross"
+    r = _pick(_csv(_HUB_CSV[(prefix, feat)]), method="csls+witness-probe", protocol=proto,
+              query_level=q_level, gallery_level=g_level)
+    return None if r is None else {"k": int(r["k"]), "beta": float(r["beta"]), "lam": float(r["lambda"])}
 
 
 def _ap(order: np.ndarray, gpids: np.ndarray, valid: np.ndarray, pid: int) -> float | None:
@@ -195,8 +210,11 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
         score, kr_used, lam = -d, True, kp["lam"]  # 속성 가중치도 k-reciprocal 척도에 맞춘 값 사용
     if not kr_used:
         score = cos.copy()
+        cp = csls_params(q_level, g_level, feat, pf)
+        if cp:  # 화면에서 넘어온 고정값(β=1, λ=0.5) 대신 검증 분할에서 고른 값 사용
+            beta, lam = cp["beta"], cp["lam"]
         if csls:
-            score = score - beta * hub_score(q_level, g_level, feat, prefix=pf)
+            score = score - beta * hub_score(q_level, g_level, feat, cp["k"] if cp else 50, pf)
     agr = _agreement(attrs or {}, probs(g_level, "gallery"))
     if agr is not None:
         score = score + lam * agr
