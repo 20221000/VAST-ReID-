@@ -357,3 +357,9 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - 필요 파일(로컬 생성): `data/vast/`, `outputs/features/osnet_x1_0__none__*.pt`, `outputs/attr_probs/probe__*.npz`
 - 텍스트 검색 LLM 옵션은 로컬 전용. **HF Spaces에는 키를 절대 넣지 않음** → 규칙 기반 + 샘플 갤러리만.
 - 남은 일: HF Spaces 공개판(샘플 갤러리 데이터 팩), 데모 화면 캡처를 docs/에 추가, MOT17 트래킹 비교, 발표 자료.
+
+### hubness 완화 CSLS (11/2) — 현재 최고 결과
+- `tools/hubness.py` → `results/hubness.csv`. 참조 집합 = query 조도의 train 이미지, k·β·λ는 train 검증에서 선택.
+- **Low→Normal R1: 외형만 23.0 → CSLS 43.1 → CSLS+목격자 속성 52.0** (mAP 18.7 → 33.8 → 40.7). Low→Low 48.1 → 53.7. Extreme→Normal 0.0 → 9.3.
+- β가 1.0(범위 끝)에서 선택됨 → 범위 확장 검토. 데모에 CSLS 옵션 추가 필요.
+- README 전면 개편 완료 (구조·원리·API 활용·결과·한계).
