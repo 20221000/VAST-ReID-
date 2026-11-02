@@ -363,3 +363,18 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - **Low→Normal R1: 외형만 23.0 → CSLS 43.1 → CSLS+목격자 속성 52.0** (mAP 18.7 → 33.8 → 40.7). Low→Low 48.1 → 53.7. Extreme→Normal 0.0 → 9.3.
 - β가 1.0(범위 끝)에서 선택됨 → 범위 확장 검토. 데모에 CSLS 옵션 추가 필요.
 - README 전면 개편 완료 (구조·원리·API 활용·결과·한계).
+
+### 대기 중: 노션 기획서 수정 (11/2 요청)
+- 페이지: https://app.notion.com/p/VAST-ReID-3f9f73de03a580f58953f32f671a65b0 (로그인 필요, Notion 커넥터로 접근)
+- 원칙: **항목 추가·삭제 금지, 바뀐 내용만 수정.** 수치는 results/*.csv의 실제 값만 사용.
+- 반영할 변경 사항:
+  1. 실촬영 생략 → 공개 데이터셋(Market-1501) + 물리 기반 저조도 합성만
+  2. Colab → 로컬 PC (WSL2, RTX 5080, PyTorch cu128)
+  3. 딥러닝 학습 없음 (사전학습 OSNet·CLIP·Zero-DCE 추론 + 속성용 선형 분류기)
+  4. VLM 라벨링 → 공개 속성 라벨(Market-1501 Attribute) 6개, gender/age/hair 제외
+  5. `lux_estimate` → `mean_luminance`, track_id/bbox 없음
+  6. 개선 방법: Zero-DCE 등 전처리는 실패(노이즈 증폭) → 속성 재순위화 + hubness 완화(CSLS). Low→Normal R1 23.0 → 52.0
+  7. AI API(Grok, GPT): 비전 LLM 저조도 속성 실험(300회), 데모 텍스트 검색(선택). ReID 자체는 로컬 모델
+  8. 트래킹: YOLO+ByteTrack 데모 → MOT17 저조도 합성 정량 평가(HOTA/IDF1) 예정
+  9. 데모: Gradio 3탭 완료(로컬), 공개는 HF Spaces 예정 (키 미포함)
+  10. 평가 모델: OSNet 중심 (TransReID, CLIP-ReID는 미진행)
