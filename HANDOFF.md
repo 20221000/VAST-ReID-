@@ -387,3 +387,10 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - 데모: AdaBN·CSLS 옵션, 벤치마크 종합 그래프. README·DEVLOG 갱신.
 - 한계: 합성 저조도는 AdaBN과 잘 맞아 효과가 과대평가됐을 수 있음.
 - 다음: MOT17 트래킹 (ByteTrack vs BoT-SORT+OSNet vs +AdaBN), HF Spaces 공개판, 발표 자료, 노션 기획서 반영(사용자가 붙여넣기).
+
+### MOT17 트래킹 (11/2)
+- 데이터: `data/raw/mot17/MOT17/train/MOT17-{02,04,09}-FRCNN` (zip은 `data/raw/mot17_zip/`, 5.9GB, 필요 없으면 삭제 가능), 저조도 `data/vast_mot/{level}/{seq}`
+- `tools/track_mot.py`: YOLO11m(`weights/yolo11m.pt`) 검출 캐시 `outputs/mot_dets/`, 결과 `outputs/mot_results/{level}/{tracker}/{seq}.txt`, `--no-eval` / `--eval-only`
+- 패키지: ultralytics 8.4, boxmot 26(외형 특징은 `Detections(embeddings=...)`로 전달), TrackEval(공식 레포 설치, `np.float` 별칭 패치 포함)
+- `results/tracking.csv`: Low는 HOTA 45.9 → 43.7로 거의 유지, Extreme은 검출 붕괴(DetA 7.7). AssA는 ByteTrack 31.2 → BoT-SORT+OSNet 37.9 → AdaBN 40.3.
+- 다음: (선택) YOLO AdaBN, HF Spaces 공개판, 발표 자료, 노션 기획서 반영

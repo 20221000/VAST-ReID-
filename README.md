@@ -43,7 +43,7 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 | 속성 라벨 | VLM 라벨링 + 사람 검수 | 공개 속성 라벨(Market-1501 Attribute)에서 6개 선택 |
 | 개선 방법 | 저조도 개선(Zero-DCE) 중심 | Zero-DCE는 실패 확인 → **AdaBN + hubness 완화(CSLS) + 속성 재순위화** |
 | AI API | 라벨링 도구 | 호출 수가 적은 곳에만 사용 (아래 참고) |
-| 트래킹 | YOLO + ByteTrack 데모 | MOT17 저조도 합성으로 정량 평가 예정 (진행 전) |
+| 트래킹 | YOLO + ByteTrack 데모 | MOT17 3개 시퀀스에 같은 저조도 합성 → ByteTrack vs BoT-SORT+OSNet(+AdaBN) 정량 평가 |
 
 ---
 
@@ -176,6 +176,26 @@ Rank-1 / mAP (%), 코사인 유사도 기준. k, β, λ는 train 검증 분할�
 - 참고 상한선(정답 속성을 양쪽에 사용): Low→Normal 61.0 / 58.4 (`results/rerank_oracle.csv`)
 - AdaBN 단독(유클리드 거리 기준, `results/adabn.csv`): Low→Normal 25.5 → 85.4, Extreme→Normal 0.0 → 25.9
 
+### 트래킹: 저조도 MOT17 (`results/tracking.csv`)
+MOT17 train 시퀀스 3개(02, 04, 09, 총 2,175프레임)에 같은 저조도 합성을 적용하고, YOLO11m 검출 결과를 모든 트래커가 공유합니다.
+BoT-SORT의 외형 특징은 우리 OSNet(Market-1501 사전학습)으로 직접 계산했습니다. 평가는 TrackEval.
+
+| 조도 | 트래커 | HOTA | DetA | AssA | IDF1 | ID 전환 |
+|---|---|---|---|---|---|---|
+| Normal | ByteTrack | **45.9** | 40.4 | 52.5 | **55.4** | 96 |
+| Normal | BoT-SORT + OSNet | 45.0 | 38.3 | 53.0 | 54.5 | 90 |
+| Low | ByteTrack | 43.7 | 38.0 | 50.4 | 53.0 | 94 |
+| Low | BoT-SORT + OSNet | 43.8 | 36.2 | 53.2 | 52.7 | 89 |
+| Low | BoT-SORT + OSNet (AdaBN) | 43.8 | 36.2 | 53.2 | 52.7 | 89 |
+| Extreme | ByteTrack | 15.5 | 7.7 | 31.2 | 12.1 | 43 |
+| Extreme | BoT-SORT + OSNet | 16.5 | 7.2 | 37.9 | 12.5 | 40 |
+| Extreme | **BoT-SORT + OSNet (AdaBN)** | **17.0** | 7.2 | **40.3** | **13.0** | **34** |
+
+- **Low에서는 트래킹이 거의 떨어지지 않습니다** (HOTA 45.9 → 43.7). ReID(94.5 → 48.5)와 대조적인데, 트래킹은 주로 위치·움직임으로 연결하고 YOLO 검출은 Low에서 버티기 때문입니다.
+- **Extreme에서는 검출이 무너집니다** (DetA 40.4 → 7.7). 트래킹 성능의 병목은 트래커가 아니라 검출입니다.
+- 남은 검출을 연결하는 능력(AssA)은 외형 특징이 도움이 됩니다: ByteTrack 31.2 → BoT-SORT+OSNet 37.9 → **AdaBN 40.3**, ID 전환 43 → 34.
+- Normal에서 AdaBN 모델은 원래 모델과 같으므로 표에서 생략했습니다.
+
 ---
 
 ## 데모
@@ -213,6 +233,9 @@ python tools/build_annotations.py
 python tools/clip_attributes.py && python tools/attr_probe.py
 python tools/rerank.py --attr-source witness-probe
 python tools/adabn.py
+python tools/synthesize_lowlight.py --mode mot --src data/raw/mot17/MOT17/train --out data/vast_mot \
+    --sequences MOT17-02-FRCNN MOT17-04-FRCNN MOT17-09-FRCNN
+python tools/track_mot.py      # TrackEval은 공식 레포에서 설치
 python tools/hubness.py --ks 10 50 100 --betas 0 0.25 0.5 0.75 1 1.25 1.5 2 3 \
     --lambdas 0 0.1 0.2 0.3 0.5 0.75 1 1.5 2 --feat adabn --out results/hubness_adabn.csv
 
@@ -236,7 +259,7 @@ docs/         개발 일지(DEVLOG.md), 그림
 ## 평가 지표
 - ReID: Rank-1, Rank-5, mAP, mINP (Market-1501 표준 프로토콜: 같은 사람·같은 카메라 제외, junk 제외)
 - 속성: 속성별 정확도, 평균 정확도
-- 트래킹(예정): IDF1, HOTA
+- 트래킹: HOTA(DetA, AssA), IDF1, MOTA, ID 전환 수 (TrackEval)
 
 ## 한계
 - 저조도는 합성입니다. 실제 야간 CCTV는 카메라 내부에서 노이즈를 제거하므로, 합성 노이즈가 실제보다 거칠 수 있습니다.
