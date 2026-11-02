@@ -289,3 +289,20 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 | cross | extreme | normal | 0.0 | 0.3 | 0.2 |
 
 - 관찰: extreme은 사실상 무작위 수준으로 붕괴. Zero-DCE 결과를 보고 extreme 합성 강도를 재조정할지 결정 (조정 시 버전을 v0.2로 올리고 기록).
+
+### 저조도 개선 비교 (11/2, `results/enhance.csv`, 실제 실행값) — 개선 효과 없음
+- `vastreid/enhance.py`: gamma(적응형), clahe, zerodce(공식 Epoch99.pth, 79,416 params, strict 로드). 모든 query·gallery에 동일 적용.
+- Zero-DCE는 32장씩 나눠 적용 (256장을 한 번에 넣으면 VRAM 16GB 초과 → WSL sysmem fallback으로 사실상 정지).
+- 전체 실행 202초, GPU 최고 약 60°C.
+
+| enhance | normal/normal R1 | low/low R1 | low→normal R1 | extreme/extreme R1 |
+|---|---|---|---|---|
+| none | 94.5 | 48.5 | 25.5 | 2.5 |
+| gamma | 90.1 | 43.1 | 14.9 | 2.9 |
+| clahe | 85.8 | 42.8 | 17.7 | 3.5 |
+| zerodce | 62.2 | 32.4 | 10.7 | 2.5 |
+
+- 원인 (`docs/figures/enhance_grid.jpg`로 육안 확인):
+  1. normal 이미지에도 적용하면 과노출·탈색 (Zero-DCE normal R1 94.5 → 62.2)
+  2. 밝기를 올리면 합성 센서 노이즈가 함께 증폭되어 컬러 반점이 생김. 노이즈 제거 없이 밝기만 올리면 ReID에 역효과.
+- 후보 대응: (a) 밝기 게이팅: mean_luminance가 임계값 미만인 이미지에만 개선 적용, (b) 노이즈 제거 후 개선, (c) 합성 v0.2: 실제 CCTV ISP처럼 노이즈 제거된 출력을 반영 (extreme 무작위 수준 문제와 함께 검토)
