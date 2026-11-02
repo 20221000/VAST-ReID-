@@ -43,8 +43,9 @@ function attrsParams() {
 }
 
 async function doSearch() {
-  const csls = $("#model").value === "csls";
-  const params = { q_level: S.level, g_level: "normal", adabn: S.adabn, csls, beta: 1.0, lam: 0.5, ...attrsParams() };
+  const m = $("#model").value;
+  const params = { q_level: S.level, g_level: "normal", adabn: S.adabn, csls: m.includes("csls"), kr: m.includes("kr"),
+                   beta: 1.0, lam: 0.5, ...attrsParams() };
   if (S.src) Object.assign(params, { src_gallery: S.src.gidx, src_level: S.src.level, q_level: S.src.level });
   else params.sample = S.sample;
   $("#btn-search").disabled = true;
@@ -62,23 +63,27 @@ function renderSearch(r) {
   $("#q-badge").textContent = `${q.level}${q.luminance != null ? ` · 평균 밝기 ${q.luminance.toFixed(2)}` : ""}`;
   const a = attrsParams();
   const filt = Object.entries(a).filter(([, v]) => v).map(([k, v]) => `${META.attr_ko[k]} ${META.value_ko[v] || v}`);
-  const model = $("#model").value === "csls" ? "Hub 보정" : "외형만";
+  const m = $("#model").value;
+  const model = [m.includes("csls") ? "Hub 보정" : null, r.kr ? "재순위화" : null].filter(Boolean).join(" + ") || "외형만";
+  $("#kr-note").textContent = r.kr_note || "";
+  $("#kr-note").classList.toggle("hidden", !r.kr_note);
   $("#r-sub").textContent = [`갤러리 ${r.gallery_size.toLocaleString()}장 (${r.g_level})`, `쿼리 ${q.level}`, model, S.adabn ? "AdaBN" : null, ...filt].filter(Boolean).join(" · ");
   $("#s-r1").textContent = r.rank1 ? "적중" : "실패";
   $("#s-r1").style.color = r.rank1 ? "#1E5FD8" : "#A1400B";
   $("#s-ap").textContent = r.ap == null ? "–" : r.ap.toFixed(2);
   $("#s-first").textContent = r.first_correct == null ? "없음" : `${r.first_correct.toLocaleString()}위`;
   $("#r-grid").innerHTML = r.results.map((x, i) => `
-    <button type="button" class="card" data-i="${i}" aria-label="${x.rank}위 ${x.ok ? "정답" : "오답"} 유사도 ${x.score}">
+    <button type="button" class="card" data-i="${i}" aria-label="${x.rank}위 ${x.ok ? "정답" : "오답"} 유사도 ${x.sim}">
       <div class="photo"><span class="rank mono">${x.rank}</span><img src="${esc(x.url)}" alt=""></div>
       <div class="cbody">
-        <div class="row"><span class="mono score">${x.score.toFixed(3)}</span>
+        <div class="row"><span class="mono score" title="코사인 유사도 (순위는 보정 후 점수 기준)">${x.sim.toFixed(3)}</span>
           ${x.ok ? `<span class="badge ok">${ICON_OK}정답</span>` : `<span class="badge ng">${ICON_NG}오답</span>`}</div>
         <small>${esc(x.cam)} · ${esc(x.illum)}</small>
       </div>
     </button>`).join("");
   renderWhy();
   $("#compare-box").classList.add("hidden");
+  refit();
 }
 
 function renderWhy() {
@@ -106,6 +111,7 @@ function showCompare(i) {
     <figure><div class="photo"><img src="${esc(x.url)}" alt="${x.rank}위 결과"></div><figcaption>${x.rank}위 · ${x.ok ? "정답" : "오답"} · ID ${x.pid > 0 ? x.pid : "없음"}</figcaption></figure>
     <p class="foot" style="flex:1 1 220px;margin:0">${esc(r.query.caption)}<br>(쿼리 인물의 정답 속성, 참고용)</p>`;
   $("#compare-box").classList.remove("hidden");
+  refit();
 }
 
 function initSearch() {
@@ -116,7 +122,7 @@ function initSearch() {
     S.level = inp.value; S.src = null; syncSeg(); await loadSamples(); doSearch();
   }));
   $("#q-change").addEventListener("click", () => {
-    const p = $("#picker"); p.classList.toggle("hidden");
+    const p = $("#picker"); p.classList.toggle("hidden"); refit();
     $("#q-change").setAttribute("aria-expanded", String(!p.classList.contains("hidden")));
   });
   $("#picker").addEventListener("click", (e) => {
@@ -151,6 +157,7 @@ async function doText(e) {
       <div class="row"><span class="mono score">${x.score.toFixed(2)}</span><small style="font-size:12px;color:var(--sub)">${esc(x.illum)}</small></div>
     </button>`).join("");
   renderDetail();
+  refit();
 }
 
 function renderDetail() {
@@ -160,6 +167,7 @@ function renderDetail() {
   $$("#t-grid .tcard").forEach((c) => { const on = Number(c.dataset.i) === T.sel; c.classList.toggle("sel", on); c.setAttribute("aria-pressed", String(on)); });
   $("#d-score").textContent = x.score.toFixed(2);
   $("#d-meta").textContent = `ID ${x.pid} · ${x.cam} · ${x.illum}`;
+  $("#d-img").src = x.url;
   $("#d-cap").textContent = x.caption;
   const a = x.attrs || {};
   $("#d-up").textContent = [a.upper_color, a.sleeve].filter(Boolean).join(" · ");
@@ -202,7 +210,7 @@ async function loadBench() {
     <div class="kpi"><span>데이터셋 규모</span><span class="mono v">${c.dataset.persons.toLocaleString()}명 · ${c.dataset.images.toLocaleString()}장</span><small>× 조도 ${c.dataset.levels}단계 (Market-1501 합성)</small></div>
     <div class="kpi"><span>Normal → Extreme 하락폭</span><span class="mono v" style="color:var(--ng)">${sign(c.drop)}</span><small>Rank-1 · 극저조도 쿼리 → 주간 gallery</small></div>
     <div class="kpi"><span>저조도 개선 효과 (Zero-DCE)</span><span class="mono v" style="color:var(--ng)">${sign(c.zerodce_low)}</span><small>Rank-1 · Low 쿼리 → 주간, 오히려 하락</small></div>
-    <div class="kpi dark"><span>제안 방법 효과 (AdaBN + CSLS + 속성)</span><span class="mono v">${sign(c.best_gain)}</span><small>Low 쿼리 → 주간 Rank-1 ${fmt(c.best_value)}</small></div>`;
+    <div class="kpi dark"><span>제안 방법 효과 (최고 조합)</span><span class="mono v">${sign(c.best_gain)}</span><small>Low 쿼리 → 주간 Rank-1 ${fmt(c.best_value)}</small></div>`;
   renderBars(); renderFail(); renderTrack();
 }
 
@@ -252,6 +260,16 @@ function initBench() {
     $("#trk-icon").setAttribute("d", playing ? "M4 2.5v11l9-5.5z" : "M4 2.5h3v11H4zM9 2.5h3v11H9z");
   });
 }
+
+/* ---------------- 화면 배율 ----------------
+   시안은 폭 1440px 기준. 넓은 화면에서는 레이아웃을 늘리지 않고 전체를 같은 비율로 확대해 시안 비율을 유지. */
+function fitZoom() {
+  const z = Math.min(1.6, Math.max(1, window.innerWidth / 1480));
+  document.documentElement.style.zoom = z.toFixed(3);
+}
+const refit = fitZoom;
+window.addEventListener("resize", fitZoom);
+fitZoom();
 
 /* ---------------- 시작 ---------------- */
 (async () => {

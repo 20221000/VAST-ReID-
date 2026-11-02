@@ -142,9 +142,29 @@ def _failure_causes(q_pid: int, g_item, j: int, q_level: str, feat: str, use_csl
     return causes or ["외형 특징 손실"]
 
 
+@lru_cache(maxsize=None)
+def kr_rows(q_level: str, feat: str) -> np.ndarray | None:
+    """tools/build_demo_cache.py가 만든 샘플 쿼리의 k-reciprocal 거리 (24, Ng)."""
+    p = ROOT / f"outputs/demo/kr__{q_level}__{feat}.npy"
+    return np.load(p).astype(np.float32) if p.exists() else None
+
+
+@lru_cache(maxsize=None)
+def kr_params(q_level: str, feat: str) -> dict | None:
+    """results/kreciprocal.csv에서 검증 분할로 고른 k, β_kr, λ_kr (gallery = normal)."""
+    proto = "same" if q_level == "normal" else "cross"
+    rows = [r for r in _csv("kreciprocal.csv") if r["feat"] == feat and r["protocol"] == proto
+            and r["query_level"] == q_level]
+    get = lambda m: next((r for r in rows if r["method"] == m), None)
+    a, b = get("kr+csls"), get("kr+csls+witness-probe")
+    if not (a and b):
+        return None
+    return {"k": int(a["k"]), "beta": float(a["beta"]), "lam": float(b["lambda"])}
+
+
 def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: bool = True, csls: bool = True,
            beta: float = 1.0, lam: float = 0.5, attrs: dict | None = None,
-           src_level: str | None = None, src_gallery: int | None = None) -> dict:
+           src_level: str | None = None, src_gallery: int | None = None, kr: bool = False) -> dict:
     feat = "adabn" if adabn else "none"
     gi, gf = items(g_level, "gallery"), feats(g_level, "gallery", feat)
     if src_gallery is not None:  # 텍스트 검색 결과를 query로 재검색
@@ -156,9 +176,21 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
         qi_ = items(q_level, "query")[sample_idx()[sample]]
         qf = feats(q_level, "query", feat)[sample_idx()[sample]]
         q_split = "query"
-    score = gf @ qf
-    if csls:
-        score = score - beta * hub_score(q_level, g_level, feat)
+    cos = gf @ qf
+    kr_used, kr_note = False, None
+    rows = kr_rows(q_level, feat) if kr else None
+    kp = kr_params(q_level, feat) if kr else None
+    if kr and (src_gallery is not None or g_level != "normal" or rows is None or kp is None):
+        kr_note = "재순위화는 샘플 쿼리(주간 gallery)에만 미리 계산되어 있어 이번 검색에는 적용하지 않았습니다"
+    elif kr:
+        d = rows[sample].copy()  # k-reciprocal 거리 (작을수록 가까움)
+        if csls:
+            d = d + kp["beta"] * hub_score(q_level, g_level, feat, kp["k"])
+        score, kr_used, lam = -d, True, kp["lam"]  # 속성 가중치도 k-reciprocal 척도에 맞춘 값 사용
+    if not kr_used:
+        score = cos.copy()
+        if csls:
+            score = score - beta * hub_score(q_level, g_level, feat)
     agr = _agreement(attrs or {}, probs(g_level, "gallery"))
     if agr is not None:
         score = score + lam * agr
@@ -174,7 +206,8 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
         g = gi[j]
         ok = bool(g.pid == qi_.pid)
         res.append({"rank": r, "url": img_url(g_level, "gallery", g.path.name), "name": g.path.stem,
-                    "score": round(float(score[j]), 3), "pid": int(g.pid), "cam": f"cam{g.camid + 1:02d}",
+                    "score": round(float(score[j]), 3), "sim": round(float(cos[j]), 3), "pid": int(g.pid),
+                    "cam": f"cam{g.camid + 1:02d}",
                     "illum": LEVEL_LABEL[g_level], "ok": ok,
                     "causes": [] if ok else _failure_causes(qi_.pid, g, int(j), q_level, feat, csls)})
     ap = _ap(order, gp, valid, qi_.pid)
@@ -186,7 +219,7 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
                   "caption": caption(qi_.pid), "original": img_url("normal", q_split, qi_.path.name)},
         "gallery_size": len(gi), "g_level": LEVEL_LABEL[g_level],
         "rank1": bool(res and res[0]["ok"]), "ap": None if ap is None else round(ap, 3),
-        "first_correct": ranks[0] if ranks else None, "results": res,
+        "first_correct": ranks[0] if ranks else None, "results": res, "kr": kr_used, "kr_note": kr_note,
     }
 
 
@@ -287,7 +320,7 @@ def _pick(rows, **kw):
 
 def bench() -> dict:
     base, wide, ada = _csv("baseline.csv"), _csv("hubness_wide.csv"), _csv("hubness_adabn.csv")
-    enh2 = _csv("enhance_v2.csv")
+    enh2, krc = _csv("enhance_v2.csv"), _csv("kreciprocal.csv")
 
     def triple(rows, method, extra=None):
         out = {}
@@ -313,11 +346,17 @@ def bench() -> dict:
         {"name": "OSNet + AdaBN", **triple(ada, "cosine")},
         {"name": "AdaBN + CSLS + 목격자 속성", **triple(ada, "csls+witness-probe")},
     ]
+    if krc:
+        rows.append({"name": "AdaBN + CSLS + 재순위화 + 목격자 속성",
+                     **triple(krc, "kr+csls+witness-probe", {"feat": "adabn"}), "note": "k-reciprocal 표준값"})
     b_n = _pick(base, protocol="same", query_level="normal")
     b_e = _pick(base, protocol="cross", query_level="extreme")
     z_l = _pick(enh2, enhance="zerodce", denoise="none", protocol="cross", query_level="low")
     c_l = _pick(wide, method="cosine", protocol="cross", query_level="low")
     best = _pick(ada, method="csls+witness-probe", protocol="cross", query_level="low")
+    best_kr = _pick(krc, feat="adabn", method="kr+csls+witness-probe", protocol="cross", query_level="low")
+    if best_kr and (not best or float(best_kr["rank1"]) > float(best["rank1"])):
+        best = best_kr
     cards = {
         "dataset": {"persons": len(PERSONS), "images": 36036, "levels": 3},
         "drop": None if not (b_n and b_e) else round((float(b_e["rank1"]) - float(b_n["rank1"])) * 100, 1),

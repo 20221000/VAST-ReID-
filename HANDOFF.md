@@ -405,3 +405,9 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - `tools/failure_analysis.py` → `results/failure_causes.csv`, `outputs/demo/hub_freq__*.npy` (데모 실패 원인 칩에 필요)
 - Gradio 데모(`demo/app.py`)는 이전 버전으로 유지. 배포(HF)는 보류.
 - 남은 작업: 발표용 그림(`tools/make_figures.py`), 발표 자료, README 데모 캡처, 리허설
+
+### k-reciprocal + 데모 조정 (11/2) — 현재 최고 결과
+- `tools/kreciprocal.py` → `results/kreciprocal.csv` (표준값 k1=20 k2=6 λ=0.3, **원래 거리에 먼저 적용 후 CSLS·속성**). AdaBN + k-reciprocal + CSLS + 목격자 속성: **Low→Normal 90.3 / mAP 88.2**, Extreme→Normal 34.4 / 37.3.
+- AdaBN 없이 k-reciprocal은 손해(23.0 → 19.9).
+- 데모: `tools/build_demo_cache.py` → `outputs/demo/kr__*.npy` (재순위화 옵션용). 화면은 "시안 1440px + 비율 확대(zoom)" 버전으로 롤백 상태, 텍스트 검색 오른쪽 카드만 높이 맞춤.
+- 서버 재시작이 필요한 경우: results CSV 갱신, demo_core.py 수정 후 (lru_cache).

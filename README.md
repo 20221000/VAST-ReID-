@@ -22,13 +22,15 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 | + hubness 완화 (CSLS) | 46.1 | 35.5 |
 | + CSLS + 속성 재순위화 | 54.9 | 42.2 |
 | + AdaBN (저조도 이미지로 BN 통계만 재추정) | 85.3 | 71.0 |
-| **+ AdaBN + CSLS + 속성 재순위화** | **86.8** | **73.3** |
+| + AdaBN + CSLS + 속성 재순위화 | 86.8 | 73.3 |
+| **+ AdaBN + k-reciprocal + CSLS + 속성** | **90.3** | **88.2** |
 
 - 어두워지면 Rank-1이 94.5 → 48.5로 거의 절반이 됩니다.
 - 사진을 밝게 만드는 전처리는 노이즈까지 증폭시켜 오히려 성능을 떨어뜨렸습니다.
 - 원인을 분석해 보니, 노이즈를 옷의 잔무늬로 착각해 **서로 다른 사람의 어두운 query가 같은 몇몇 gallery 이미지로 몰리고**(hubness) 있었습니다.
 - 검색 단계에서 hub를 깎는 CSLS와 속성 정보를 더하면 야간→주간 Rank-1이 **23.0 → 54.9**로 회복됩니다.
-- 원인 자체(모델 내부 정규화 통계가 밝은 사진에 맞춰져 있음)를 고치는 **AdaBN**을 적용하면 **85.3**, 모두 합치면 **86.8**까지 회복됩니다. 극저조도→주간도 0.0 → 35.6이 됩니다. (합성 저조도라 AdaBN 효과가 과대평가됐을 수 있음, [한계](#한계) 참고)
+- 원인 자체(모델 내부 정규화 통계가 밝은 사진에 맞춰져 있음)를 고치는 **AdaBN**을 적용하면 **85.3**, CSLS·속성까지 합치면 **86.8**,
+  여기에 ReID 표준 재순위화인 **k-reciprocal**을 더하면 **90.3 / mAP 88.2**까지 회복됩니다. 극저조도→주간도 0.0 → 35.6이 됩니다. (합성 저조도라 AdaBN 효과가 과대평가됐을 수 있음, [한계](#한계) 참고)
 - 표의 "어두운 → 밝은" 아래 행들은 재순위화를 위해 코사인 유사도 기준입니다. 유클리드 거리 기준 베이스라인은 25.5 / 20.3입니다.
 
 ---
@@ -169,12 +171,16 @@ Rank-1 / mAP (%), 코사인 유사도 기준. k, β, λ는 train 검증 분할�
 | + CSLS + 목격자 속성 | 53.7 / 28.4 | 54.9 / 42.2 | 3.5 / 1.5 | 8.9 / 6.4 |
 | AdaBN | 80.7 / 60.0 | 85.3 / 71.0 | 17.2 / 7.8 | 25.4 / 19.8 |
 | AdaBN + CSLS | 80.9 / 59.9 | 85.1 / 70.5 | 18.9 / 8.3 | 28.5 / 22.9 |
-| **AdaBN + CSLS + 목격자 속성** | **81.5 / 61.1** | **86.8 / 73.3** | **19.7 / 8.7** | **35.6 / 28.8** |
+| AdaBN + CSLS + 목격자 속성 | 81.5 / 61.1 | 86.8 / 73.3 | **19.7** / 8.7 | **35.6** / 28.8 |
+| AdaBN + k-reciprocal | 86.2 / 78.4 | 89.8 / 87.8 | 18.9 / 10.3 | 30.2 / 32.5 |
+| **AdaBN + k-reciprocal + CSLS + 목격자 속성** | **86.0 / 78.4** | **90.3 / 88.2** | 19.4 / **10.7** | 34.4 / **37.3** |
 
 - 예측 속성: query·gallery 모두 CLIP + 선형 분류기 예측 (완전 자동)
 - 목격자 속성: query는 사람이 진술한 인상착의(정답 속성으로 대체), gallery는 예측. 목격자 진술 + CCTV 기록 검색 시나리오
 - 참고 상한선(정답 속성을 양쪽에 사용): Low→Normal 61.0 / 58.4 (`results/rerank_oracle.csv`)
 - AdaBN 단독(유클리드 거리 기준, `results/adabn.csv`): Low→Normal 25.5 → 85.4, Extreme→Normal 0.0 → 25.9
+- k-reciprocal(`results/kreciprocal.csv`)은 논문 표준값(k1=20, k2=6, λ=0.3)으로 고정하고, 원래 코사인 거리에 먼저 적용한 뒤 CSLS·속성을 더합니다.
+  **AdaBN 없이 쓰면 오히려 손해**입니다(Low→Normal 23.0 → 19.9): 어두운 쿼리의 이웃이 이미 hub로 오염되어 있어 잘못된 이웃을 강화하기 때문입니다.
 
 ### 트래킹: 저조도 MOT17 (`results/tracking.csv`)
 MOT17 train 시퀀스 3개(02, 04, 09, 총 2,175프레임)에 같은 저조도 합성을 적용하고, YOLO11m 검출 결과를 모든 트래커가 공유합니다.
@@ -252,6 +258,8 @@ python tools/build_annotations.py
 python tools/clip_attributes.py && python tools/attr_probe.py
 python tools/rerank.py --attr-source witness-probe
 python tools/adabn.py
+python tools/kreciprocal.py
+python tools/build_demo_cache.py   # 데모 재순위화용 캐시
 python tools/synthesize_lowlight.py --mode mot --src data/raw/mot17/MOT17/train --out data/vast_mot \
     --sequences MOT17-02-FRCNN MOT17-04-FRCNN MOT17-09-FRCNN
 python tools/track_mot.py      # TrackEval은 공식 레포에서 설치

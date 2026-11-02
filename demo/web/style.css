@@ -111,7 +111,10 @@ main.results { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: c
 .tcard .photo { height: 176px; margin: 0; width: 100%; }
 .tcard .row { display: flex; justify-content: space-between; padding: 0 4px 2px; }
 .tcard .score { font-size: 15px; font-weight: 700; }
-aside.detail { flex: 1 1 300px; max-width: 380px; display: flex; flex-direction: column; gap: 18px; align-self: flex-start; }
+aside.detail { flex: 1 1 300px; max-width: 380px; display: flex; flex-direction: column; gap: 18px; align-self: stretch; }
+.dphoto { flex: 1 1 auto; min-height: 180px; border-radius: 12px; background: var(--photo); overflow: hidden; display: flex; justify-content: center; }
+.dphoto img { height: 100%; max-height: 100%; width: auto; object-fit: contain; display: block; }
+aside.detail .linkbtn { margin-top: auto; }
 .big { font-size: 32px; font-weight: 700; color: var(--navy); }
 .capbox { background: #FFF8EA; border: 1px solid #F7DFAE; border-radius: 12px; padding: 16px; line-height: 1.65; }
 .capbox div { font-size: 12px; font-weight: 600; color: var(--warn); margin-bottom: 6px; }

@@ -61,7 +61,9 @@
         </details>
         <label class="field">모델
           <select id="model">
+            <option value="csls+kr">OSNet + Hub 보정 + 재순위화</option>
             <option value="csls">OSNet + Hub 보정 (CSLS)</option>
+            <option value="kr">OSNet + 재순위화 (k-reciprocal)</option>
             <option value="plain">OSNet</option>
           </select>
         </label>
@@ -87,6 +89,7 @@
           <div class="stat"><span>정답 첫 순위</span><span class="mono" id="s-first">–</span></div>
         </div>
       </div>
+      <p class="foot hidden" id="kr-note" style="margin:-10px 0 0"></p>
       <div class="grid5" id="r-grid"></div>
       <section class="panel why" id="why">
         <span class="dot"></span>
@@ -140,6 +143,7 @@
         <span class="mono big" id="d-score">–</span>
         <span style="color:var(--sub)" id="d-meta"></span>
       </div>
+      <div class="dphoto"><img id="d-img" alt="선택한 인물"></div>
       <div class="capbox"><div>시맨틱 캡션 (속성 기반)</div><span id="d-cap"></span></div>
       <dl class="attrs">
         <dt>상의</dt><dd id="d-up"></dd>
