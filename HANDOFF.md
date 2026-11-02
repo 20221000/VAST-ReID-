@@ -430,3 +430,8 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - 최종 모델 데모 교체(11/2): 백본 `backbone=ftm|ft|base`(기본 ftm, `osnet_x1_0-ftmsmt`). `results/kreciprocal_ftmsmt.csv`: Extreme 82.2 / 77.2, Low 90.7 / 85.5. 벤치마크 카드·최종 행·실패 원인(FTM+CSLS) 반영.
 - 최종 모델 24 에폭(11/2): `weights/osnet_x1_0_vast_lowlight_ft_online_msmt_24.pth`, 특징 `osnet_x1_0-ftmsmt24`, `results/{finetune_msmt24,hubness_ftmsmt24*,kreciprocal_ftmsmt24}.csv`. 조합 Extreme 83.0 / 77.9, Low 90.8 / 85.6. 데모 기본(ftm).
 - 데모 무작위 샘플(11/3): `tools/build_demo_msmt.py` → `outputs/features/msmt__*`, `outputs/demo/krfull__osnet_x1_0-ftmsmt24__*`, `data/vast_msmt/{low,extreme}/{query,train_ref}`. API `/api/samples?seed=`, `/api/search?ds=market|msmt&qidx=`, `/img_msmt/...`.
+
+### 다음 세션 시작점 (11/3)
+- 현재 최고: 최종 모델(osnet_x1_0-ftmsmt24) + k-reciprocal + CSLS + 속성, Extreme 83.0 / 77.9, Low 90.8 / 85.6.
+- 다음 후보(DEVLOG "Day 1~2 정리"): ① 밝은/어두운 짝 일관성 손실 ② Triplet + PK ③ 검증용 ID 분리 ④ 색 범위 확대·TTA ⑤ 백본 교체.
+- 보류: 데이터셋 공유 방식(공개 저장소라 커밋 불가, 제출 규정 확인 필요), NightReID·MSMT17 공식 동의서, HF 배포, 발표 자료.
