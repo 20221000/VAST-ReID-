@@ -23,3 +23,15 @@ AdaBN+CSLS,extreme,normal,distractor,446,0.1854,2405,3368,33
 AdaBN+CSLS,extreme,normal,hub,0,0.0,2405,3368,33
 AdaBN+CSLS,extreme,normal,similar,175,0.0728,2405,3368,33
 AdaBN+CSLS,extreme,normal,other,1784,0.7418,2405,3368,33
+FT+CSLS,normal,normal,distractor,38,0.125,304,3368,33
+FT+CSLS,normal,normal,hub,0,0.0,304,3368,33
+FT+CSLS,normal,normal,similar,72,0.2368,304,3368,33
+FT+CSLS,normal,normal,other,194,0.6382,304,3368,33
+FT+CSLS,low,normal,distractor,47,0.1163,404,3368,33
+FT+CSLS,low,normal,hub,0,0.0,404,3368,33
+FT+CSLS,low,normal,similar,95,0.2351,404,3368,33
+FT+CSLS,low,normal,other,262,0.6485,404,3368,33
+FT+CSLS,extreme,normal,distractor,187,0.1591,1175,3368,33
+FT+CSLS,extreme,normal,hub,0,0.0,1175,3368,33
+FT+CSLS,extreme,normal,similar,146,0.1243,1175,3368,33
+FT+CSLS,extreme,normal,other,842,0.7166,1175,3368,33

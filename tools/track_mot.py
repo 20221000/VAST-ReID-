@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from vastreid.reid import MEAN, STD, gpu_temp, load_model  # noqa: E402
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
-TRACKERS = ["bytetrack", "botsort-osnet", "botsort-osnet-adabn"]
+TRACKERS = ["bytetrack", "botsort-osnet", "botsort-osnet-adabn", "botsort-osnet-ft"]
 
 
 # ------------------------------------------------------------------ 검출
@@ -95,13 +95,16 @@ def embed(model, img: np.ndarray, boxes: np.ndarray) -> np.ndarray:
     return torch.nn.functional.normalize(f, dim=1).cpu().numpy()
 
 
-def reid_models(levels):
+def reid_models(levels, trackers=TRACKERS):
     from adabn import adapt_bn
     base = load_model("osnet_x1_0", ROOT / "weights/osnet_x1_0_market1501.pth", DEV)
     adapted = {"normal": base}
-    for lv in levels:
-        if lv != "normal":
-            adapted[lv], _, _ = adapt_bn(base, lv)
+    if "botsort-osnet-adabn" in trackers:
+        for lv in levels:
+            if lv != "normal":
+                adapted[lv], _, _ = adapt_bn(base, lv)
+    if "botsort-osnet-ft" in trackers:  # 저조도 미세조정 OSNet (tools/finetune.py), AdaBN 없음
+        adapted["ft"] = load_model("osnet_x1_0", ROOT / "weights/osnet_x1_0_vast_lowlight_ft.pth", DEV)
     return base, adapted
 
 
@@ -186,7 +189,7 @@ def main():
     args.out = args.out or ROOT / ("results/tracking_yolo_adabn.csv" if args.det_adabn else "results/tracking.csv")
     assert args.adapt_seq not in args.seqs, "적응용 시퀀스는 평가 시퀀스와 달라야 함"
     need_reid = any("botsort" in t for t in args.trackers) and not args.eval_only
-    base, adapted = reid_models(args.levels) if need_reid else (None, {})
+    base, adapted = reid_models(args.levels, args.trackers) if need_reid else (None, {})
     rows = []
     for lv in args.levels:
         trk_root = ROOT / f"outputs/mot_results{'_yoloadabn' if args.det_adabn else ''}/{lv}"
@@ -205,7 +208,8 @@ def main():
                   f"{time.time() - t:.0f}s  GPU {gpu_temp()}°C", flush=True)
             for name in args.trackers:
                 t = time.time()
-                model = {"botsort-osnet": base, "botsort-osnet-adabn": adapted.get(lv)}.get(name)
+                model = {"botsort-osnet": base, "botsort-osnet-adabn": adapted.get(lv),
+                         "botsort-osnet-ft": adapted.get("ft")}.get(name)
                 n = run_tracker(name, dets, frames, model, trk_root / name / f"{seq}.txt")
                 print(f"    [{name}] {n} boxes {time.time() - t:.0f}s", flush=True)
         if args.limit_frames or args.no_eval:

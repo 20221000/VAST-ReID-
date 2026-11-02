@@ -352,7 +352,7 @@ def _pick(rows, **kw):
 def bench() -> dict:
     base, wide, ada = _csv("baseline.csv"), _csv("hubness_wide.csv"), _csv("hubness_adabn.csv")
     enh2, krc = _csv("enhance_v2.csv"), _csv("kreciprocal.csv")
-    ft, krf = _csv("finetune.csv"), _csv("kreciprocal_ft.csv")
+    ft, krf = _csv("finetune.csv"), _csv("kreciprocal_ft_pft.csv")  # 데모와 같은 설정 (결합 속성 분류기)
 
     def triple(rows, method, extra=None):
         out = {}
@@ -386,7 +386,7 @@ def bench() -> dict:
                      "note": "train 3조도 12 에폭"})
     if krf:
         rows.append({"name": "미세조정 + CSLS + 재순위화 + 목격자 속성",
-                     **triple(krf, "kr+csls+witness-probe", {"feat": "none"})})
+                     **triple(krf, "kr+csls+witness-probe", {"feat": "none"}), "note": "AdaBN 없음"})
     b_n = _pick(base, protocol="same", query_level="normal")
     b_e = _pick(base, protocol="cross", query_level="extreme")
     z_l = _pick(enh2, enhance="zerodce", denoise="none", protocol="cross", query_level="low")
@@ -397,12 +397,16 @@ def bench() -> dict:
     for cand in (best_kr, best_ft):
         if cand and (not best or float(cand["rank1"]) > float(best["rank1"])):
             best = cand
+    c_e = _pick(wide, method="cosine", protocol="cross", query_level="extreme")
+    best_e = _pick(krf, feat="none", method="kr+csls+witness-probe", protocol="cross", query_level="extreme")
     cards = {
         "dataset": {"persons": len(PERSONS), "images": 36036, "levels": 3},
         "drop": None if not (b_n and b_e) else round((float(b_e["rank1"]) - float(b_n["rank1"])) * 100, 1),
         "zerodce_low": None if not (z_l and c_l) else round((float(z_l["rank1"]) - float(c_l["rank1"])) * 100, 1),
         "best_gain": None if not (best and c_l) else round((float(best["rank1"]) - float(c_l["rank1"])) * 100, 1),
         "best_value": None if not best else round(float(best["rank1"]) * 100, 1),
+        "best_gain_ext": None if not (best_e and c_e) else round((float(best_e["rank1"]) - float(c_e["rank1"])) * 100, 1),
+        "best_value_ext": None if not best_e else round(float(best_e["rank1"]) * 100, 1),
     }
     fail = {}
     for r in _csv("failure_causes.csv"):
@@ -410,7 +414,8 @@ def bench() -> dict:
             {"cause": r["cause"], "ratio": round(float(r["ratio"]) * 100, 1), "count": int(r["count"]),
              "n_wrong": int(r["n_wrong_rank1"])})
     trk = {}
-    for name, det in [("tracking.csv", "yolo11m"), ("tracking_yolo_adabn.csv", "yolo11m+adabn")]:
+    for name, det in [("tracking.csv", "yolo11m"), ("tracking_ft.csv", "yolo11m"),
+                      ("tracking_yolo_adabn.csv", "yolo11m+adabn")]:
         for r in _csv(name):
             trk.setdefault(r["level"], []).append({"tracker": r["tracker"], "detector": det,
                                                    "HOTA": round(float(r["HOTA"]) * 100, 1),

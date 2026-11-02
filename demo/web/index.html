@@ -193,7 +193,7 @@
           <div class="legend"><span><i class="c0"></i>Normal</span><span><i class="c1"></i>Low</span><span><i class="c2"></i>Extreme</span></div>
         </div>
         <div id="m-rows"></div>
-        <p class="foot">Normal은 밝은 쿼리 → 밝은 gallery, Low·Extreme은 어두운 쿼리 → 주간 gallery(야간 CCTV로 주간 기록 검색). 코사인 유사도 기준이며 Zero-DCE 행만 유클리드 거리입니다. λ·β는 train 검증 분할에서 선택했습니다.</p>
+        <p class="foot">Normal은 밝은 쿼리 → 밝은 gallery, Low·Extreme은 어두운 쿼리 → 주간 gallery(야간 CCTV로 주간 기록 검색). 코사인 유사도 기준이며 Zero-DCE 행만 유클리드 거리입니다. λ·β는 train 검증 분할에서 선택했습니다. 미세조정 행은 train 이미지(751명 × 3조도)로 12 에폭 추가 학습한 OSNet이며, 미세조정 모델에는 AdaBN이 해로워 쓰지 않았습니다.</p>
       </section>
       <aside class="side">
         <section class="panel">
@@ -201,6 +201,7 @@
           <div class="minis" role="group" aria-label="설정">
             <button type="button" data-fset="OSNet" aria-pressed="true">OSNet</button>
             <button type="button" data-fset="AdaBN+CSLS" aria-pressed="false">AdaBN + CSLS</button>
+            <button type="button" data-fset="FT+CSLS" aria-pressed="false">미세조정 + CSLS</button>
           </div>
           <div class="minis" role="group" aria-label="쿼리 조도">
             <button type="button" data-flev="low" aria-pressed="true">Low</button>

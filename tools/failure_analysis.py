@@ -8,7 +8,8 @@
   hub        : 어두운 query 1% 이상의 top-10에 반복 등장하는 gallery 이미지 (hubness)
   similar    : 정답 속성 6개 중 양쪽 모두 알려진 속성이 전부 일치 (비슷한 옷)
   other      : 외형 특징 손실 (위에 해당하지 않음)
-설정: 외형만(OSNet, 코사인) / AdaBN + CSLS(k=50, β=1.0). gallery는 normal(주간 기록).
+설정: 외형만(OSNet, 코사인) / AdaBN + CSLS(k=50, β=1.0) / 미세조정 OSNet + CSLS(k=50, β=1.0, AdaBN 없음).
+gallery는 normal(주간 기록).
 """
 from __future__ import annotations
 
@@ -31,9 +32,12 @@ ATTRS = ["upper_color", "lower_color", "sleeve", "lower_type", "bag", "hat"]
 CAUSES = ["distractor", "hub", "similar", "other"]
 
 
-def feats(level, split, feat):
+BASE, FT = "osnet_x1_0", "osnet_x1_0-ft"
+
+
+def feats(level, split, feat, prefix=BASE):
     tag = f"adabn-{level}" if feat == "adabn" and level != "normal" else "none"
-    d = torch.load(ROOT / f"outputs/features/osnet_x1_0__{tag}__{level}__{split}.pt", weights_only=True)
+    d = torch.load(ROOT / f"outputs/features/{prefix}__{tag}__{level}__{split}.pt", weights_only=True)
     return torch.nn.functional.normalize(d["feats"].float(), dim=1).to(DEV)
 
 
@@ -44,22 +48,24 @@ def main():
     gp = torch.tensor([g.pid for g in gi], device=DEV)
     gc = torch.tensor([g.camid for g in gi], device=DEV)
     rows = []
-    for setting, feat, beta in [("OSNet", "none", 0.0), ("AdaBN+CSLS", "adabn", 1.0)]:
+    for setting, feat, beta, pf in [("OSNet", "none", 0.0, BASE), ("AdaBN+CSLS", "adabn", 1.0, BASE),
+                                    ("FT+CSLS", "none", 1.0, FT)]:
         for ql in ["normal", "low", "extreme"]:
             qi = list_split(DATA, ql, "query")
             qp = torch.tensor([q.pid for q in qi], device=DEV)
             qc = torch.tensor([q.camid for q in qi], device=DEV)
-            qf, gf = feats(ql, "query", feat), feats("normal", "gallery", feat)
+            qf, gf = feats(ql, "query", feat, pf), feats("normal", "gallery", feat, pf)
             s = qf @ gf.T
             if beta:
-                ref = feats(ql, "train", feat)
+                ref = feats(ql, "train", feat, pf)
                 rg = torch.cat([(gf[i:i + 4096] @ ref.T).topk(50, dim=1).values.mean(1)
                                 for i in range(0, len(gf), 4096)])
                 s = s - beta * rg[None, :]
             s = s.masked_fill((gp[None, :] == qp[:, None]) & (gc[None, :] == qc[:, None]), -1e9)
             top = s.topk(10, dim=1).indices
             freq = np.bincount(top.flatten().cpu().numpy(), minlength=len(gi))
-            out = ROOT / f"outputs/demo/hub_freq__{feat}__{ql}__normal.npy"
+            pre = "" if pf == BASE else f"{pf}__"  # vastreid/demo_core.hub_freq와 같은 이름
+            out = ROOT / f"outputs/demo/hub_freq__{pre}{feat}__{ql}__normal.npy"
             out.parent.mkdir(parents=True, exist_ok=True)
             np.save(out, freq)
             hub_thr = max(1, int(0.01 * len(qi)))

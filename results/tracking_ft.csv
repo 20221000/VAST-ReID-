@@ -1,0 +1,4 @@
+level,detector,tracker,HOTA,DetA,AssA,IDF1,MOTA,IDSW
+normal,yolo11m,botsort-osnet-ft,0.4501,0.3828,0.53,0.5446,0.4211,91
+low,yolo11m,botsort-osnet-ft,0.4383,0.3619,0.5319,0.5274,0.4036,85
+extreme,yolo11m,botsort-osnet-ft,0.1649,0.0722,0.3772,0.1266,0.0807,34
