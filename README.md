@@ -25,7 +25,8 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 | + AdaBN + CSLS + 속성 재순위화 | 86.8 | 73.3 |
 | + AdaBN + k-reciprocal + CSLS + 속성 | 90.3 | 88.2 |
 | + 저조도 미세조정 (train 3조도, 12 에폭) | 88.8 | 70.5 |
-| **+ 미세조정 + k-reciprocal + CSLS + 속성** | **92.8** | **89.1** |
+| + 미세조정 + k-reciprocal + CSLS + 속성 | 92.8 | 89.1 |
+| **최종: Market + MSMT17 미세조정 + k-reciprocal + CSLS + 속성** | **90.7** | **85.5** |
 
 - 어두워지면 Rank-1이 94.5 → 48.5로 거의 절반이 됩니다.
 - 사진을 밝게 만드는 전처리는 노이즈까지 증폭시켜 오히려 성능을 떨어뜨렸습니다.
@@ -36,6 +37,7 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 - 학습 없이는 극저조도가 35.6에서 멈춰, train 이미지만으로 **저조도 미세조정**을 했습니다. 극저조도→주간 Rank-1이 **0.0 → 78.9 (mAP 76.8)**,
   야간→주간이 **92.8**이 됩니다. 대신 밝은 사진끼리는 94.5 → 91.3(재순위화 포함 95.5 → 93.5)으로 조금 내려갑니다. 자세한 내용은 [저조도 미세조정](#저조도-미세조정-resultsfinetunecsv-resultskreciprocal_ftcsv).
 - 표의 "어두운 → 밝은" 아래 행들은 재순위화를 위해 코사인 유사도 기준입니다. 유클리드 거리 기준 베이스라인은 25.5 / 20.3입니다.
+- **최종 모델**은 MSMT17(다른 장소·카메라 15대) 사진을 함께, 매번 새로 합성한 저조도로 학습했습니다. Market 점수는 조금 낮지만 **처음 보는 색 조명에서 36.9 → 56.8**, 극저조도 조합 **82.2**로 가장 강합니다. [최종 모델](#최종-모델-일반화-시험) 참고.
 
 ---
 
@@ -43,7 +45,7 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 
 | | 원래 계획 | 현재 |
 |---|---|---|
-| 데이터 | 실촬영 + 합성 | **공개 데이터셋(Market-1501) + 저조도 합성만** (실촬영 생략) |
+| 데이터 | 실촬영 + 합성 | **공개 데이터셋(Market-1501, 학습 보강·검증용 MSMT17) + 저조도 합성** (실촬영 생략) |
 | 실행 환경 | Google Colab | 로컬 PC (WSL2 Ubuntu, RTX 5080, PyTorch cu128) |
 | 모델 | 일부 직접 학습 | 사전학습 모델 추론 + 속성용 선형 분류기, 마지막에 **OSNet 저조도 미세조정(12 에폭, 7분)** 추가 |
 | 속성 라벨 | VLM 라벨링 + 사람 검수 | 공개 속성 라벨(Market-1501 Attribute)에서 6개 선택 |
@@ -221,6 +223,28 @@ BoT-SORT의 외형 특징은 우리 OSNet(Market-1501 사전학습)으로 직접
 극저조도 트래킹의 병목은 외형 특징이 아니라 **검출**이기 때문입니다(YOLO가 사람을 찾지 못하면 ReID가 연결할 대상이 없음).
 ---
 
+### 최종 모델: 일반화 시험
+미세조정이 같은 합성 노이즈를 외웠을 수 있다는 걱정과, 다른 장소에서도 되는지를 확인하려고 두 가지를 바꾸고 시험을 넓혔습니다.
+
+- **온라인 저조도 합성** (`tools/finetune.py --online`): 미리 만든 저조도 1장을 반복하지 않고 매번 노출·노이즈·색을 새로 뽑아 합성.
+- **MSMT17 추가** (`--msmt`): 다른 대학 캠퍼스, 카메라 15대, 아침·낮·오후 사진 1,041명(32,621장). 학습 25분.
+- 시험: ① Market(같은 합성) ② 처음 보는 저조도(`tools/eval_shift.py`: 노이즈 2배·JPEG 저화질 / 주황 가로등 색) ③ MSMT17 test 저조도(`tools/eval_msmt.py`)
+
+Rank-1 (gallery는 모두 주간)
+
+| 모델 | Market Low | Market Extreme | 처음 보는 노이즈 | 처음 보는 색 조명 | MSMT17 Extreme |
+|---|---|---|---|---|---|
+| 사전학습 | 23.0 | 0.0 | 0.0 | 1.8 | 0.2 |
+| 미세조정 (Market, 고정 합성) | **88.8** | 65.4 | 43.1 | 33.7 | 5.6 |
+| 미세조정 (Market, 온라인 합성) | 88.0 | 67.1 | 49.9 | 36.9 | 5.8 |
+| **최종 (Market + MSMT17, 온라인 합성)** | 86.0 | **67.1** | **50.6** | **56.8** | 30.1\* |
+| 최종 + k-reciprocal + CSLS + 속성 | 90.7 | **82.2** | | | |
+
+\* MSMT17 train으로 학습했으므로 같은 데이터셋(사람은 겹치지 않음). Market으로만 학습한 모델은 MSMT17에서 밝은 사진도 약 10%로, 데이터셋이 바뀌면 ReID가 크게 무너집니다.
+
+- Market 점수만 보면 Market만 학습한 모델이 낫지만, **처음 보는 조건에서는 최종 모델이 훨씬 강합니다**(특히 색 조명 +20). 데모 기본 백본은 최종 모델입니다.
+- MSMT17은 Kaggle 비공식 사본(`ouassimaazzouzi/msmt17`, 126,441장으로 공식 수치와 일치)을 사용했습니다. 공식 배포는 동의서 신청 방식입니다.
+
 ### 저조도 미세조정 (`results/finetune.csv`, `results/kreciprocal_ft.csv`)
 학습 없는 방법으로는 극저조도가 35.6에서 더 오르지 않아, 마지막 단계로 OSNet을 저조도에 맞게 추가 학습했습니다 (`tools/finetune.py`).
 
@@ -315,6 +339,19 @@ python tools/hubness.py --prefix osnet_x1_0-ft --feat adabn $G --out results/hub
 python tools/kreciprocal.py --prefix osnet_x1_0-ft --hub-none results/hubness_ft.csv \
     --hub-adabn results/hubness_ft_adabn.csv --out results/kreciprocal_ft.csv
 python tools/build_demo_cache.py --prefix osnet_x1_0-ft
+
+# 최종 모델: Market + MSMT17, 온라인 저조도 합성 (약 25분)
+kaggle datasets download ouassimaazzouzi/msmt17 -p data/raw/msmt17 --unzip
+python tools/finetune.py --online --msmt --prefix osnet_x1_0-ftmsmt \
+    --out weights/osnet_x1_0_vast_lowlight_ft_online_msmt.pth --csv results/finetune_msmt.csv
+python tools/attr_probe.py --src clip+osnet-ft --name probe-clip+osnet-ft
+P="--attr-probe probe-clip+osnet-ft --prefix osnet_x1_0-ftmsmt"
+python tools/hubness.py $P --feat none  $G --out results/hubness_ftmsmt.csv
+python tools/hubness.py $P --feat adabn $G --out results/hubness_ftmsmt_adabn.csv
+python tools/kreciprocal.py $P --hub-none results/hubness_ftmsmt.csv \
+    --hub-adabn results/hubness_ftmsmt_adabn.csv --out results/kreciprocal_ftmsmt.csv
+python tools/build_demo_cache.py --prefix osnet_x1_0-ftmsmt
+python tools/eval_shift.py && python tools/eval_msmt.py   # 일반화 시험
 python tools/synthesize_lowlight.py --mode mot --src data/raw/mot17/MOT17/train --out data/vast_mot \
     --sequences MOT17-02-FRCNN MOT17-04-FRCNN MOT17-09-FRCNN
 python tools/track_mot.py      # TrackEval은 공식 레포에서 설치

@@ -69,7 +69,8 @@
         <p class="foot hidden" id="strength-warn" style="margin:-6px 0 0">진술이 틀리면 정답이 크게 밀려날 수 있습니다. 갤러리 속성은 AI 예측이라 진술이 맞아도 일부 정답이 밀릴 수 있습니다.</p>
         <label class="field">백본
           <select id="backbone">
-            <option value="ft">OSNet 저조도 미세조정 (12 에폭)</option>
+            <option value="ftm">최종: 미세조정 (Market + MSMT17)</option>
+            <option value="ft">미세조정 (Market만)</option>
             <option value="base">OSNet 사전학습 (Market-1501)</option>
           </select>
         </label>
@@ -193,7 +194,7 @@
           <div class="legend"><span><i class="c0"></i>Normal</span><span><i class="c1"></i>Low</span><span><i class="c2"></i>Extreme</span></div>
         </div>
         <div id="m-rows"></div>
-        <p class="foot">Normal은 밝은 쿼리 → 밝은 gallery, Low·Extreme은 어두운 쿼리 → 주간 gallery(야간 CCTV로 주간 기록 검색). 코사인 유사도 기준이며 Zero-DCE 행만 유클리드 거리입니다. λ·β는 train 검증 분할에서 선택했습니다. 미세조정 행은 train 이미지(751명 × 3조도)로 12 에폭 추가 학습한 OSNet이며, 미세조정 모델에는 AdaBN이 해로워 쓰지 않았습니다.</p>
+        <p class="foot">Normal은 밝은 쿼리 → 밝은 gallery, Low·Extreme은 어두운 쿼리 → 주간 gallery(야간 CCTV로 주간 기록 검색). 코사인 유사도 기준이며 Zero-DCE 행만 유클리드 거리입니다. λ·β는 train 검증 분할에서 선택했습니다. 미세조정 행은 train 이미지로 12 에폭 추가 학습한 OSNet(최종 모델은 MSMT17 train 1,041명 추가, 매번 새로 합성한 저조도)이며, 미세조정 모델에는 AdaBN이 해로워 쓰지 않았습니다.</p>
       </section>
       <aside class="side">
         <section class="panel">
@@ -201,7 +202,7 @@
           <div class="minis" role="group" aria-label="설정">
             <button type="button" data-fset="OSNet" aria-pressed="true">OSNet</button>
             <button type="button" data-fset="AdaBN+CSLS" aria-pressed="false">AdaBN + CSLS</button>
-            <button type="button" data-fset="FT+CSLS" aria-pressed="false">미세조정 + CSLS</button>
+            <button type="button" data-fset="FTM+CSLS" aria-pressed="false">최종 모델 + CSLS</button>
           </div>
           <div class="minis" role="group" aria-label="쿼리 조도">
             <button type="button" data-flev="low" aria-pressed="true">Low</button>

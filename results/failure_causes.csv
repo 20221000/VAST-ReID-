@@ -35,3 +35,15 @@ FT+CSLS,extreme,normal,distractor,187,0.1591,1175,3368,33
 FT+CSLS,extreme,normal,hub,0,0.0,1175,3368,33
 FT+CSLS,extreme,normal,similar,146,0.1243,1175,3368,33
 FT+CSLS,extreme,normal,other,842,0.7166,1175,3368,33
+FTM+CSLS,normal,normal,distractor,51,0.1241,411,3368,33
+FTM+CSLS,normal,normal,hub,0,0.0,411,3368,33
+FTM+CSLS,normal,normal,similar,90,0.219,411,3368,33
+FTM+CSLS,normal,normal,other,270,0.6569,411,3368,33
+FTM+CSLS,low,normal,distractor,57,0.1118,510,3368,33
+FTM+CSLS,low,normal,hub,0,0.0,510,3368,33
+FTM+CSLS,low,normal,similar,110,0.2157,510,3368,33
+FTM+CSLS,low,normal,other,343,0.6725,510,3368,33
+FTM+CSLS,extreme,normal,distractor,160,0.1471,1088,3368,33
+FTM+CSLS,extreme,normal,hub,0,0.0,1088,3368,33
+FTM+CSLS,extreme,normal,similar,148,0.136,1088,3368,33
+FTM+CSLS,extreme,normal,other,780,0.7169,1088,3368,33

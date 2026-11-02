@@ -26,10 +26,13 @@ VALUE_KO = {"black": "검정", "white": "흰색", "red": "빨강", "purple": "�
 PERSONS = {int(k): v for k, v in json.loads(
     (ROOT / "annotations/person_attributes.json").read_text(encoding="utf-8"))["persons"].items()}
 N_SAMPLES = 24
-BASE, FT = "osnet_x1_0", "osnet_x1_0-ft"  # 사전학습 / 저조도 미세조정(tools/finetune.py) 특징 캐시
+BASE, FT, FTM = "osnet_x1_0", "osnet_x1_0-ft", "osnet_x1_0-ftmsmt"  # 특징 캐시 이름
+# 백본: base 사전학습 / ft Market 저조도 미세조정 / ftm Market + MSMT17 온라인 합성 미세조정(최종, 데모 기본)
+BACKBONES = {"base": BASE, "ft": FT, "ftm": FTM}
+BACKBONE_LABEL = {"base": "사전학습 OSNet", "ft": "미세조정 OSNet (Market)", "ftm": "최종 OSNet (Market + MSMT17)"}
 ATTR_STRENGTH = {"strong": 0.3, "max": 0.9}
 # 갤러리 속성 예측: 미세조정 백본은 CLIP + 미세조정 OSNet 특징 결합 분류기 (tools/attr_probe.py --src clip+osnet-ft)
-ATTR_PROBE = {BASE: "probe", FT: "probe-clip+osnet-ft"}  # λ (속성 하나당 가중치 = λ/6 → 0.05, 0.15)
+ATTR_PROBE = {BASE: "probe", FT: "probe-clip+osnet-ft", FTM: "probe-clip+osnet-ft"}  # λ (속성 하나당 가중치 = λ/6 → 0.05, 0.15)
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -122,7 +125,9 @@ def _agreement(choices: dict, gp: dict) -> np.ndarray | None:
 
 
 _HUB_CSV = {(BASE, "none"): "hubness_wide.csv", (BASE, "adabn"): "hubness_adabn.csv",
-            (FT, "none"): "hubness_ft_pft.csv", (FT, "adabn"): "hubness_ft_adabn_pft.csv"}
+            (FT, "none"): "hubness_ft_pft.csv", (FT, "adabn"): "hubness_ft_adabn_pft.csv",
+            (FTM, "none"): "hubness_ftmsmt.csv", (FTM, "adabn"): "hubness_ftmsmt_adabn.csv"}
+_KR_CSV = {BASE: "kreciprocal.csv", FT: "kreciprocal_ft_pft.csv", FTM: "kreciprocal_ftmsmt.csv"}
 
 
 @lru_cache(maxsize=None)
@@ -175,7 +180,7 @@ def kr_rows(q_level: str, feat: str, prefix: str = BASE) -> np.ndarray | None:
 def kr_params(q_level: str, feat: str, prefix: str = BASE) -> dict | None:
     """results/kreciprocal.csv에서 검증 분할로 고른 k, β_kr, λ_kr (gallery = normal)."""
     proto = "same" if q_level == "normal" else "cross"
-    rows = [r for r in _csv("kreciprocal.csv" if prefix == BASE else "kreciprocal_ft_pft.csv") if r["feat"] == feat and r["protocol"] == proto
+    rows = [r for r in _csv(_KR_CSV[prefix]) if r["feat"] == feat and r["protocol"] == proto
             and r["query_level"] == q_level]
     get = lambda m: next((r for r in rows if r["method"] == m), None)
     a, b = get("kr+csls"), get("kr+csls+witness-probe")
@@ -187,9 +192,9 @@ def kr_params(q_level: str, feat: str, prefix: str = BASE) -> dict | None:
 def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: bool = True, csls: bool = True,
            beta: float = 1.0, lam: float = 0.5, attrs: dict | None = None,
            src_level: str | None = None, src_gallery: int | None = None, kr: bool = False,
-           ft: bool = False, attr_strength: str = "auto") -> dict:
+           backbone: str = "ftm", attr_strength: str = "auto") -> dict:
     feat = "adabn" if adabn else "none"
-    pf = FT if ft else BASE
+    pf = BACKBONES.get(backbone, FTM)
     gi, gf = items(g_level, "gallery"), feats(g_level, "gallery", feat, pf)
     if src_gallery is not None:  # 텍스트 검색 결과를 query로 재검색
         lv = src_level or g_level
@@ -250,7 +255,7 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
         "gallery_size": len(gi), "g_level": LEVEL_LABEL[g_level],
         "rank1": bool(res and res[0]["ok"]), "ap": None if ap is None else round(ap, 3),
         "first_correct": ranks[0] if ranks else None, "results": res, "kr": kr_used, "kr_note": kr_note,
-        "ft": ft, "attr_weight": round(lam / len(ATTR_VALUES), 3), "attr_strength": attr_strength,
+        "backbone": BACKBONE_LABEL.get(backbone, BACKBONE_LABEL["ftm"]), "attr_weight": round(lam / len(ATTR_VALUES), 3), "attr_strength": attr_strength,
     }
 
 
@@ -352,7 +357,8 @@ def _pick(rows, **kw):
 def bench() -> dict:
     base, wide, ada = _csv("baseline.csv"), _csv("hubness_wide.csv"), _csv("hubness_adabn.csv")
     enh2, krc = _csv("enhance_v2.csv"), _csv("kreciprocal.csv")
-    ft, krf = _csv("finetune.csv"), _csv("kreciprocal_ft_pft.csv")  # 데모와 같은 설정 (결합 속성 분류기)
+    ft, krf = _csv("finetune.csv"), _csv("kreciprocal_ft_pft.csv")  # Market만 미세조정 (결합 속성 분류기)
+    ftm, krm = _csv("finetune_msmt.csv"), _csv("kreciprocal_ftmsmt.csv")  # 최종 모델 (Market + MSMT17)
 
     def triple(rows, method, extra=None):
         out = {}
@@ -387,6 +393,12 @@ def bench() -> dict:
     if krf:
         rows.append({"name": "미세조정 + CSLS + 재순위화 + 목격자 속성",
                      **triple(krf, "kr+csls+witness-probe", {"feat": "none"}), "note": "AdaBN 없음"})
+    if ftm:
+        rows.append({"name": "최종 모델 (Market + MSMT17 미세조정)", **triple(ftm, "cosine", {"feat": "none"}),
+                     "note": "온라인 합성 · 처음 보는 조명에 강함"})
+    if krm:
+        rows.append({"name": "최종 모델 + CSLS + 재순위화 + 목격자 속성",
+                     **triple(krm, "kr+csls+witness-probe", {"feat": "none"}), "note": "데모 기본"})
     b_n = _pick(base, protocol="same", query_level="normal")
     b_e = _pick(base, protocol="cross", query_level="extreme")
     z_l = _pick(enh2, enhance="zerodce", denoise="none", protocol="cross", query_level="low")
@@ -398,7 +410,9 @@ def bench() -> dict:
         if cand and (not best or float(cand["rank1"]) > float(best["rank1"])):
             best = cand
     c_e = _pick(wide, method="cosine", protocol="cross", query_level="extreme")
-    best_e = _pick(krf, feat="none", method="kr+csls+witness-probe", protocol="cross", query_level="extreme")
+    final = krm or krf  # 카드는 데모 기본(최종 모델) 기준
+    best_e = _pick(final, feat="none", method="kr+csls+witness-probe", protocol="cross", query_level="extreme")
+    best = _pick(final, feat="none", method="kr+csls+witness-probe", protocol="cross", query_level="low") or best
     cards = {
         "dataset": {"persons": len(PERSONS), "images": 36036, "levels": 3},
         "drop": None if not (b_n and b_e) else round((float(b_e["rank1"]) - float(b_n["rank1"])) * 100, 1),

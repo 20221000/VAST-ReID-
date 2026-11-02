@@ -45,7 +45,7 @@ function attrsParams() {
 async function doSearch() {
   const m = $("#model").value;
   const params = { q_level: S.level, g_level: "normal", adabn: S.adabn, csls: m.includes("csls"), kr: m.includes("kr"),
-                   ft: $("#backbone").value === "ft", attr_strength: $("#attr-strength").value,
+                   backbone: $("#backbone").value, attr_strength: $("#attr-strength").value,
                    beta: 1.0, lam: 0.5, ...attrsParams() };
   if (S.src) Object.assign(params, { src_gallery: S.src.gidx, src_level: S.src.level, q_level: S.src.level });
   else params.sample = S.sample;
@@ -69,7 +69,7 @@ function renderSearch(r) {
   $("#kr-note").textContent = r.kr_note || "";
   $("#kr-note").classList.toggle("hidden", !r.kr_note);
   $("#r-sub").textContent = [`갤러리 ${r.gallery_size.toLocaleString()}장 (${r.g_level})`, `쿼리 ${q.level}`,
-    r.ft ? "미세조정 OSNet" : "사전학습 OSNet", model, S.adabn ? "AdaBN" : null, ...filt,
+    r.backbone, model, S.adabn ? "AdaBN" : null, ...filt,
     filt.length ? `진술 가중치 ${r.attr_weight}/속성${r.attr_strength === "auto" ? " (자동)" : ""}` : null].filter(Boolean).join(" · ");
   $("#s-r1").textContent = r.rank1 ? "적중" : "실패";
   $("#s-r1").style.color = r.rank1 ? "#1E5FD8" : "#A1400B";
@@ -141,7 +141,7 @@ function initSearch() {
     $("#strength-warn").classList.toggle("hidden", $("#attr-strength").value === "auto");
   });
   $("#backbone").addEventListener("change", () => {
-    S.adabn = $("#backbone").value !== "ft"; $("#t-adabn").setAttribute("aria-pressed", String(S.adabn));
+    S.adabn = $("#backbone").value === "base"; $("#t-adabn").setAttribute("aria-pressed", String(S.adabn));
   });
   $("#t-adabn").addEventListener("click", () => {
     S.adabn = !S.adabn; $("#t-adabn").setAttribute("aria-pressed", String(S.adabn));

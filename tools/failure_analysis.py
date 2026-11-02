@@ -8,7 +8,8 @@
   hub        : 어두운 query 1% 이상의 top-10에 반복 등장하는 gallery 이미지 (hubness)
   similar    : 정답 속성 6개 중 양쪽 모두 알려진 속성이 전부 일치 (비슷한 옷)
   other      : 외형 특징 손실 (위에 해당하지 않음)
-설정: 외형만(OSNet, 코사인) / AdaBN + CSLS(k=50, β=1.0) / 미세조정 OSNet + CSLS(k=50, β=1.0, AdaBN 없음).
+설정: 외형만(OSNet, 코사인) / AdaBN + CSLS(k=50, β=1.0) / 미세조정 OSNet + CSLS(k=50, β=1.0, AdaBN 없음)
+      / 최종 모델(Market + MSMT17 미세조정) + CSLS.
 gallery는 normal(주간 기록).
 """
 from __future__ import annotations
@@ -32,7 +33,7 @@ ATTRS = ["upper_color", "lower_color", "sleeve", "lower_type", "bag", "hat"]
 CAUSES = ["distractor", "hub", "similar", "other"]
 
 
-BASE, FT = "osnet_x1_0", "osnet_x1_0-ft"
+BASE, FT, FTM = "osnet_x1_0", "osnet_x1_0-ft", "osnet_x1_0-ftmsmt"
 
 
 def feats(level, split, feat, prefix=BASE):
@@ -49,7 +50,7 @@ def main():
     gc = torch.tensor([g.camid for g in gi], device=DEV)
     rows = []
     for setting, feat, beta, pf in [("OSNet", "none", 0.0, BASE), ("AdaBN+CSLS", "adabn", 1.0, BASE),
-                                    ("FT+CSLS", "none", 1.0, FT)]:
+                                    ("FT+CSLS", "none", 1.0, FT), ("FTM+CSLS", "none", 1.0, FTM)]:
         for ql in ["normal", "low", "extreme"]:
             qi = list_split(DATA, ql, "query")
             qp = torch.tensor([q.pid for q in qi], device=DEV)
