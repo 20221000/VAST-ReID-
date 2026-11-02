@@ -42,6 +42,17 @@ def image(level: str, split: str, name: str):
     return FileResponse(p, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
+@app.get("/img_msmt/{level}/{split}/{stem}")
+def image_msmt(level: str, split: str, stem: str):
+    if split not in ("query", "gallery"):
+        raise HTTPException(404)
+    try:
+        p = core.msmt_path(level, split, stem)  # 이름 형식·목록에 있는 파일만 허용
+    except ValueError:
+        raise HTTPException(404)
+    return FileResponse(p, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+
+
 def _level(v: str) -> str:
     if v not in core.LEVELS:
         raise HTTPException(400, "level")
@@ -49,8 +60,8 @@ def _level(v: str) -> str:
 
 
 @app.get("/api/samples")
-def samples(level: str = "low"):
-    return core.samples(_level(level))
+def samples(level: str = "low", seed: int | None = Query(None, ge=0, le=2**31)):
+    return core.samples(_level(level), seed)
 
 
 @app.get("/api/search")
@@ -58,16 +69,23 @@ def search(q_level: str = "low", sample: int | None = None, g_level: str = "norm
            csls: bool = True, kr: bool = False, beta: float = 1.0, lam: float = 0.5, src_level: str | None = None,
            src_gallery: int | None = None, upper_color: str = "", lower_color: str = "", sleeve: str = "",
            lower_type: str = "", bag: str = "", hat: str = "", backbone: str = "ftm",
+           ds: str = "market", qidx: int | None = None,
            attr_strength: str = "auto"):
-    if sample is None and src_gallery is None:
-        raise HTTPException(400, "sample or src_gallery")
+    if ds not in ("market", "msmt"):
+        raise HTTPException(400, "ds")
+    if sample is None and src_gallery is None and qidx is None:
+        raise HTTPException(400, "sample, qidx or src_gallery")
     if sample is not None and not 0 <= sample < len(core.sample_idx()):
         raise HTTPException(400, "sample")
+    if qidx is not None:
+        n = len(core.msmt_items("query")) if ds == "msmt" else len(core.items(_level(q_level), "query"))
+        if not 0 <= qidx < n or (ds == "msmt" and not core.msmt_ready()):
+            raise HTTPException(400, "qidx")
     attrs = {"upper_color": upper_color, "lower_color": lower_color, "sleeve": sleeve,
              "lower_type": lower_type, "bag": bag, "hat": hat}
     return core.search(_level(q_level), sample, _level(g_level), adabn, csls, beta, lam, attrs,
                        _level(src_level) if src_level else None, src_gallery, kr, backbone if backbone in core.BACKBONES else "ftm",
-                       attr_strength if attr_strength in ("auto", "strong", "max") else "auto")
+                       attr_strength if attr_strength in ("auto", "strong", "max") else "auto", ds, qidx)
 
 
 @app.get("/api/text")

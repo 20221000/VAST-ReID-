@@ -732,3 +732,12 @@
 
 - 모든 시험에서 소폭 개선 → 테스트 하나에 맞춘 것이 아니라 덜 학습된 상태였던 것. 채택(데모 기본 `osnet_x1_0-ftmsmt24`).
 - 다만 Market Low 조합은 Market만 학습한 모델(92.8)보다 여전히 2.0 낮음: MSMT17을 섞은 대가는 학습량으로 다 메워지지 않음.
+
+### 데모 샘플 무작위화 + MSMT17 인물 (11/3)
+- 요청: 샘플에 MSMT17 인물도 넣고, "이미지 변경"을 누를 때마다 무작위로.
+- 구현: `/api/samples?seed=` → Market query 12명 + MSMT17 query 12명 무작위(같은 seed면 조도를 바꿔도 같은 인물). MSMT17 사진에는 "MSMT" 표시.
+  - MSMT17 인물은 MSMT17 주간 gallery 82,161장에서 검색. 특징·CSLS 참조(train 3,000장 합성, 라벨 미사용)는 `tools/build_demo_msmt.py`로 미리 추출(6분, 백본 3종).
+  - 재순위화: 무작위 Market 인물에도 쓰도록 최종 모델의 Market query 3,368개 전체 k-reciprocal 거리를 미리 계산(조도별 107MB). MSMT17은 gallery가 커서 Hub 보정까지만.
+  - MSMT17은 속성 라벨이 없어 목격자 속성·세부 실패 원인은 적용하지 않고 화면에 안내.
+- 확인(API): MSMT17 검색 0.8초, Market 무작위 0.5초. MSMT17 Extreme 무작위 40명 Rank-1: 사전학습 0, Market 미세조정 2, 최종 21.
+  → 다른 데이터셋에서는 Market만 학습한 모델이 거의 작동하지 않음을 데모에서 직접 보여줄 수 있음.

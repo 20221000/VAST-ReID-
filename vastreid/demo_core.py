@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import csv
 import json
+import random
 import re
 from functools import lru_cache
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 
@@ -108,10 +110,134 @@ def caption(pid: int) -> str:
 
 
 # ------------------------------------------------------------------ 이미지 검색
-def samples(level: str) -> list[dict]:
+def samples(level: str, seed: int | None = None, n: int = N_SAMPLES) -> list[dict]:
+    """seed 없음: 고정 샘플(Market 24명). seed 있음: Market query 절반 + MSMT17 query 절반을 무작위로 섞음.
+    idx는 각 데이터셋 query 목록의 인덱스 (조도를 바꿔도 같은 인물)."""
     q = items(level, "query")
-    return [{"idx": n, "name": q[i].path.stem, "url": img_url(level, "query", q[i].path.name)}
-            for n, i in enumerate(sample_idx())]
+    mk = lambda i: {"ds": "market", "idx": i, "name": q[i].path.stem, "url": img_url(level, "query", q[i].path.name)}
+    if seed is None:
+        return [mk(i) for i in sample_idx()]
+    rng = random.Random(seed)
+    out = [mk(i) for i in rng.sample(range(len(q)), n // 2)]
+    mq = msmt_items("query")
+    if msmt_ready():
+        out += [{"ds": "msmt", "idx": i, "name": mq[i].path.stem,
+                 "url": msmt_url(level, "query", mq[i].path.name)} for i in rng.sample(range(len(mq)), n - n // 2)]
+    rng.shuffle(out)
+    return out
+
+
+# ------------------------------------------------------------------ MSMT17 (데모 무작위 샘플)
+MSMT_SYN = ROOT / "data/vast_msmt"
+MSMT_NAME = re.compile(r"^\d{4}_\d{3}_\d{2}_\d{4}(?:morning|noon|afternoon)_\d{4}_\d+(?:_ex)?$")
+
+
+@lru_cache(maxsize=None)
+def msmt_items(split: str):
+    from vastreid.data import list_msmt
+    try:
+        return list_msmt(split)
+    except FileNotFoundError:
+        return []
+
+
+@lru_cache(maxsize=1)
+def msmt_ready() -> bool:
+    """tools/build_demo_msmt.py 캐시가 있어야 MSMT17 샘플을 보여줌."""
+    return bool(msmt_items("query")) and (ROOT / f"outputs/features/msmt__{FTM}__normal__gallery.pt").exists()
+
+
+@lru_cache(maxsize=1)
+def _msmt_index() -> dict:
+    return {(sp, x.path.stem): i for sp in ("query", "gallery") for i, x in enumerate(msmt_items(sp))}
+
+
+def msmt_path(level: str, split: str, stem: str) -> Path:
+    i = _msmt_index().get((split, stem)) if MSMT_NAME.match(stem) and level in LEVELS else None
+    if i is None or (split == "gallery" and level != "normal"):
+        raise ValueError("bad image")
+    raw = msmt_items(split)[i].path
+    p = raw if level == "normal" else MSMT_SYN / level / "query" / raw.name
+    if not p.is_file():
+        raise ValueError("no image")
+    return p
+
+
+def msmt_url(level: str, split: str, name: str) -> str:
+    return f"/img_msmt/{level}/{split}/{Path(name).stem}"
+
+
+@lru_cache(maxsize=None)
+def msmt_feats(prefix: str, level: str, split: str) -> np.ndarray:
+    d = torch.load(ROOT / f"outputs/features/msmt__{prefix}__{level}__{split}.pt", weights_only=True)
+    return torch.nn.functional.normalize(d["feats"].float(), dim=1).numpy()
+
+
+@lru_cache(maxsize=None)
+def msmt_hub(prefix: str, q_level: str, k: int) -> np.ndarray:
+    """CSLS hub 점수: MSMT17 gallery와 같은 조도로 합성한 train 일부(라벨 미사용)의 top-k 평균 유사도."""
+    g = torch.from_numpy(msmt_feats(prefix, "normal", "gallery")).to(DEV)
+    r = torch.from_numpy(msmt_feats(prefix, q_level, "ref")).to(DEV)
+    return torch.cat([(g[s:s + 8192] @ r.T).topk(k, dim=1).values.mean(1)
+                      for s in range(0, len(g), 8192)]).cpu().numpy()
+
+
+def _query_lum(p: Path) -> float:
+    img = cv2.imread(str(p))
+    return round(float(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).mean() / 255), 3) if img is not None else None
+
+
+def msmt_search(q_level: str, qidx: int, backbone: str = "ftm", csls: bool = True, adabn: bool = False,
+                kr: bool = False, attrs: dict | None = None) -> dict:
+    """MSMT17 query → MSMT17 주간 gallery(82,161장). 특징은 tools/build_demo_msmt.py가 미리 추출."""
+    pf = BACKBONES.get(backbone, FTM)
+    qi, gi = msmt_items("query"), msmt_items("gallery")
+    q = qi[qidx]
+    gf, qf = msmt_feats(pf, "normal", "gallery"), msmt_feats(pf, q_level, "query")[qidx]
+    cos = gf @ qf
+    score, notes = cos.copy(), []
+    if pf == FTM:
+        notes.append("최종 모델은 MSMT17 train(검색 대상과 다른 인물)으로도 학습했습니다")
+    if csls:
+        cp = csls_params(q_level, "normal", "none", pf) or {"k": 50, "beta": 1.0}
+        score = score - cp["beta"] * msmt_hub(pf, q_level, cp["k"])
+    if kr:
+        notes.append("재순위화는 MSMT17(갤러리 8만 장)에 미리 계산하지 않아 Hub 보정까지만 적용했습니다")
+    if attrs and any(attrs.values()):
+        notes.append("MSMT17은 속성 라벨이 없어 목격자 속성을 반영하지 않았습니다")
+    if adabn:
+        notes.append("AdaBN은 Market 기준이라 MSMT17에는 적용하지 않았습니다")
+    gp = _msmt_arr("pid")
+    valid = ~((gp == q.pid) & (_msmt_arr("cam") == q.camid))
+    score = np.where(valid, score, -np.inf)
+    order = np.argsort(-score)
+    res = []
+    for r, j in enumerate(order[:10], 1):
+        g = gi[j]
+        ok = bool(g.pid == q.pid)
+        causes = [] if ok else (["외형이 비슷한 다른 사람 (MSMT17은 속성 라벨이 없어 세부 원인 분석 불가)"]
+                                + ([f"{LEVEL_LABEL[q_level]} 조도"] if q_level != "normal" else []))
+        res.append({"rank": r, "url": msmt_url("normal", "gallery", g.path.name), "name": g.path.stem, "glvl": "normal",
+                    "score": round(float(score[j]), 3), "sim": round(float(cos[j]), 3), "pid": int(g.pid),
+                    "cam": f"cam{g.camid + 1:02d}", "illum": "Normal", "ok": ok, "causes": causes})
+    ap = _ap(order, gp, valid, q.pid)
+    ranks = np.where(gp[order[np.isfinite(score[order])]] == q.pid)[0]
+    return {
+        "query": {"url": msmt_url(q_level, "query", q.path.name), "name": q.path.stem, "level": LEVEL_LABEL[q_level],
+                  "luminance": _query_lum(msmt_path(q_level, "query", q.path.stem)), "pid": int(q.pid),
+                  "caption": "MSMT17 인물 (속성 라벨 없음)", "original": msmt_url("normal", "query", q.path.name),
+                  "split": "query", "lvl": q_level},
+        "dataset": "MSMT17", "gallery_size": len(gi), "g_level": "Normal",
+        "rank1": bool(res and res[0]["ok"]), "ap": None if ap is None else round(ap, 3),
+        "first_correct": int(ranks[0]) + 1 if len(ranks) else None, "results": res, "kr": False,
+        "kr_note": " · ".join(notes) or None, "backbone": BACKBONE_LABEL.get(backbone, BACKBONE_LABEL["ftm"]),
+        "attr_weight": 0.0, "attr_strength": "auto",
+    }
+
+
+@lru_cache(maxsize=None)
+def _msmt_arr(key: str) -> np.ndarray:
+    return np.array([x.pid if key == "pid" else x.camid for x in msmt_items("gallery")])
 
 
 def _agreement(choices: dict, gp: dict) -> np.ndarray | None:
@@ -177,6 +303,20 @@ def kr_rows(q_level: str, feat: str, prefix: str = BASE) -> np.ndarray | None:
 
 
 @lru_cache(maxsize=None)
+def _kr_full(q_level: str, feat: str, prefix: str):
+    p = ROOT / f"outputs/demo/krfull__{prefix}__{q_level}__{feat}.npy"  # tools/build_demo_msmt.py (전체 query)
+    return np.load(p, mmap_mode="r") if p.exists() else None
+
+
+def kr_row(q_level: str, feat: str, prefix: str, qindex: int) -> np.ndarray | None:
+    full = _kr_full(q_level, feat, prefix)
+    if full is not None:
+        return np.asarray(full[qindex], dtype=np.float32)
+    rows, si = kr_rows(q_level, feat, prefix), sample_idx()
+    return rows[si.index(qindex)].copy() if rows is not None and qindex in si else None
+
+
+@lru_cache(maxsize=None)
 def kr_params(q_level: str, feat: str, prefix: str = BASE) -> dict | None:
     """results/kreciprocal.csv에서 검증 분할로 고른 k, β_kr, λ_kr (gallery = normal)."""
     proto = "same" if q_level == "normal" else "cross"
@@ -192,7 +332,9 @@ def kr_params(q_level: str, feat: str, prefix: str = BASE) -> dict | None:
 def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: bool = True, csls: bool = True,
            beta: float = 1.0, lam: float = 0.5, attrs: dict | None = None,
            src_level: str | None = None, src_gallery: int | None = None, kr: bool = False,
-           backbone: str = "ftm", attr_strength: str = "auto") -> dict:
+           backbone: str = "ftm", attr_strength: str = "auto", ds: str = "market", qidx: int | None = None) -> dict:
+    if ds == "msmt" and src_gallery is None:
+        return msmt_search(q_level, qidx, backbone, csls, adabn, kr, attrs)
     feat = "adabn" if adabn else "none"
     pf = BACKBONES.get(backbone, FTM)
     gi, gf = items(g_level, "gallery"), feats(g_level, "gallery", feat, pf)
@@ -202,17 +344,19 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
         qf = feats(lv, "gallery", feat, pf)[src_gallery]
         q_level, q_split = lv, "gallery"
     else:
-        qi_ = items(q_level, "query")[sample_idx()[sample]]
-        qf = feats(q_level, "query", feat, pf)[sample_idx()[sample]]
+        qindex = qidx if qidx is not None else sample_idx()[sample]
+        qi_ = items(q_level, "query")[qindex]
+        qf = feats(q_level, "query", feat, pf)[qindex]
         q_split = "query"
     cos = gf @ qf
     kr_used, kr_note = False, None
-    rows = kr_rows(q_level, feat, pf) if kr else None
+    row = kr_row(q_level, feat, pf, qindex) if kr and src_gallery is None and g_level == "normal" else None
     kp = kr_params(q_level, feat, pf) if kr else None
-    if kr and (src_gallery is not None or g_level != "normal" or rows is None or kp is None):
-        kr_note = "재순위화는 샘플 쿼리(주간 gallery)에만 미리 계산되어 있어 이번 검색에는 적용하지 않았습니다"
+    if kr and (row is None or kp is None):
+        kr_note = ("재순위화는 최종 모델(AdaBN 끔)의 Market 쿼리 전체와 다른 백본의 기본 샘플 24명에만 미리 계산되어 있어 "
+                   "이번 검색에는 적용하지 않았습니다")
     elif kr:
-        d = rows[sample].copy()  # k-reciprocal 거리 (작을수록 가까움)
+        d = row  # k-reciprocal 거리 (작을수록 가까움)
         if csls:
             d = d + kp["beta"] * hub_score(q_level, g_level, feat, kp["k"], pf)
         score, kr_used, lam = -d, True, kp["lam"]  # 속성 가중치도 k-reciprocal 척도에 맞춘 값 사용
@@ -255,6 +399,7 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
         "gallery_size": len(gi), "g_level": LEVEL_LABEL[g_level],
         "rank1": bool(res and res[0]["ok"]), "ap": None if ap is None else round(ap, 3),
         "first_correct": ranks[0] if ranks else None, "results": res, "kr": kr_used, "kr_note": kr_note,
+        "dataset": "Market-1501",
         "backbone": BACKBONE_LABEL.get(backbone, BACKBONE_LABEL["ftm"]), "attr_weight": round(lam / len(ATTR_VALUES), 3), "attr_strength": attr_strength,
     }
 
@@ -485,6 +630,8 @@ def _llm():
 
 
 def _img_path(level: str, split: str, name: str) -> Path:
+    if MSMT_NAME.match(name):
+        return msmt_path(level, split, name)
     if level not in LEVELS or split not in ("query", "gallery") or not re.match(r"^-?\d{1,4}_c\ds\d_\d{6}_\d{2}$", name):
         raise ValueError("bad image")
     p = DATA / level / split / f"{name}.jpg"

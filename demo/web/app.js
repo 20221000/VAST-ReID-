@@ -24,7 +24,8 @@ function route() {
 window.addEventListener("hashchange", route);
 
 /* ---------------- 1. 이미지 검색 ---------------- */
-const S = { level: "extreme", sample: 0, src: null, adabn: false, last: null, selected: null };
+// q: 선택한 쿼리 {ds: "market"|"msmt", idx: 그 데이터셋 query 목록 인덱스}, seed: 무작위 샘플 묶음 (없으면 기본 24명)
+const S = { level: "extreme", q: null, seed: null, src: null, adabn: false, last: null, selected: null };
 
 function fillAttrSelect(id, key) {
   const el = $(id);
@@ -32,8 +33,13 @@ function fillAttrSelect(id, key) {
 }
 
 async function loadSamples() {
-  const list = await api("/api/samples", { level: S.level });
-  $("#picker").innerHTML = list.map((s) => `<button type="button" data-i="${s.idx}" class="${s.idx === S.sample && !S.src ? "on" : ""}" aria-label="샘플 ${s.idx}"><img src="${esc(s.url)}" alt=""></button>`).join("");
+  const params = { level: S.level };
+  if (S.seed != null) params.seed = S.seed;
+  const list = await api("/api/samples", params);
+  if (!S.q && list.length) S.q = { ds: list[0].ds, idx: list[0].idx };
+  const isOn = (s) => !S.src && S.q && s.ds === S.q.ds && s.idx === S.q.idx;
+  $("#picker").innerHTML = list.map((s) => `<button type="button" data-ds="${s.ds}" data-i="${s.idx}" class="${isOn(s) ? "on" : ""}"
+    aria-label="${s.ds === "msmt" ? "MSMT17" : "Market-1501"} 샘플 ${esc(s.name)}"><img src="${esc(s.url)}" alt="">${s.ds === "msmt" ? '<span class="dstag">MSMT</span>' : ""}</button>`).join("");
 }
 
 function attrsParams() {
@@ -48,7 +54,7 @@ async function doSearch() {
                    backbone: $("#backbone").value, attr_strength: $("#attr-strength").value,
                    beta: 1.0, lam: 0.5, ...attrsParams() };
   if (S.src) Object.assign(params, { src_gallery: S.src.gidx, src_level: S.src.level, q_level: S.src.level });
-  else params.sample = S.sample;
+  else Object.assign(params, { ds: S.q.ds, qidx: S.q.idx });
   $("#btn-search").disabled = true;
   try {
     const r = await api("/api/search", params);
@@ -68,7 +74,7 @@ function renderSearch(r) {
   const model = [m.includes("csls") ? "Hub 보정" : null, r.kr ? "재순위화" : null].filter(Boolean).join(" + ") || "외형만";
   $("#kr-note").textContent = r.kr_note || "";
   $("#kr-note").classList.toggle("hidden", !r.kr_note);
-  $("#r-sub").textContent = [`갤러리 ${r.gallery_size.toLocaleString()}장 (${r.g_level})`, `쿼리 ${q.level}`,
+  $("#r-sub").textContent = [`${r.dataset || "Market-1501"} 갤러리 ${r.gallery_size.toLocaleString()}장 (${r.g_level})`, `쿼리 ${q.level}`,
     r.backbone, model, S.adabn ? "AdaBN" : null, ...filt,
     filt.length ? `진술 가중치 ${r.attr_weight}/속성${r.attr_strength === "auto" ? " (자동)" : ""}` : null].filter(Boolean).join(" · ");
   $("#s-r1").textContent = r.rank1 ? "적중" : "실패";
@@ -112,7 +118,7 @@ function showCompare(i) {
     <figure><div class="photo"><img src="${esc(r.query.url)}" alt="쿼리 (${esc(r.query.level)})"></div><figcaption>쿼리 · ${esc(r.query.level)}</figcaption></figure>
     <figure><div class="photo"><img src="${esc(r.query.original)}" alt="쿼리 원본"></div><figcaption>쿼리 원본 · Normal</figcaption></figure>
     <figure><div class="photo"><img src="${esc(x.url)}" alt="${x.rank}위 결과"></div><figcaption>${x.rank}위 · ${x.ok ? "정답" : "오답"} · ID ${x.pid > 0 ? x.pid : "없음"}</figcaption></figure>
-    <p class="foot" style="flex:1 1 220px;margin:0">${esc(r.query.caption)}<br>(쿼리 인물의 정답 속성, 참고용)</p>
+    <p class="foot" style="flex:1 1 220px;margin:0">${esc(r.query.caption)}${r.dataset === "MSMT17" ? "" : "<br>(쿼리 인물의 정답 속성, 참고용)"}</p>
     ${x.ok ? "" : `<div class="aibox wait" id="ai-explain"><b>AI 오답 설명 · 비전 LLM</b><span>쿼리와 오답 사진을 보고 설명을 만드는 중…</span></div>`}`;
   $("#compare-box").classList.remove("hidden");
   if (!x.ok) loadExplain(r, x);
@@ -126,13 +132,18 @@ function initSearch() {
   $$("#seg-level input").forEach((inp) => inp.addEventListener("change", async () => {
     S.level = inp.value; S.src = null; syncSeg(); await loadSamples(); doSearch();
   }));
-  $("#q-change").addEventListener("click", () => {
-    const p = $("#picker"); p.classList.toggle("hidden"); refit();
+  $("#q-change").addEventListener("click", async () => {
+    const p = $("#picker");
+    if (p.classList.contains("hidden")) {  // 열 때마다 Market + MSMT17에서 새로 무작위로 뽑음
+      S.seed = Math.floor(Math.random() * 2 ** 31);
+      await loadSamples();
+    }
+    p.classList.toggle("hidden"); refit();
     $("#q-change").setAttribute("aria-expanded", String(!p.classList.contains("hidden")));
   });
   $("#picker").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
-    S.sample = Number(b.dataset.i); S.src = null;
+    S.q = { ds: b.dataset.ds, idx: Number(b.dataset.i) }; S.src = null;
     $$("#picker button").forEach((x) => x.classList.toggle("on", x === b));
     doSearch();
   });
