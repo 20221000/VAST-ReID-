@@ -1,0 +1,11 @@
+attr_source,method,lambda,protocol,query_level,gallery_level,rank1,rank5,rank10,mAP,mINP,num_valid_query,val_mAP_at_lambda
+clip,cosine,0.0,same,normal,normal,0.9433,0.978,0.986,0.8357,0.5576,3368,0.9997
+clip,rerank,0,same,normal,normal,0.9433,0.978,0.986,0.8357,0.5576,3368,0.9997
+clip,cosine,0.0,same,low,low,0.4807,0.6526,0.7248,0.2262,0.0306,3368,0.3472
+clip,rerank,0.3,same,low,low,0.4908,0.6707,0.7417,0.2371,0.0335,3368,0.3548
+clip,cosine,0.0,cross,low,normal,0.2295,0.3492,0.4112,0.1871,0.078,3368,0.4128
+clip,rerank,0.5,cross,low,normal,0.2776,0.4136,0.4819,0.2226,0.0948,3368,0.4385
+clip,cosine,0.0,same,extreme,extreme,0.0243,0.0748,0.1161,0.0099,0.0014,3368,0.0144
+clip,rerank,0.15,same,extreme,extreme,0.0258,0.0796,0.125,0.0106,0.0014,3368,0.0152
+clip,cosine,0.0,cross,extreme,normal,0.0,0.0009,0.0036,0.0022,0.0015,3368,0.0057
+clip,rerank,0.5,cross,extreme,normal,0.0,0.0015,0.0039,0.0026,0.0017,3368,0.0064

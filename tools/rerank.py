@@ -3,11 +3,14 @@
 
     python tools/rerank.py --attr-source oracle --out results/rerank_oracle.csv
 
-- attr_agreement: 6개 속성 중 둘 다 알려진(unknown 아님) 속성의 일치 비율. 속성이 없는 사람(distractor)은 0.5(중립).
+- attr_agreement: 속성별로 두 확률분포의 내적(= 같은 값일 확률)을 구해, 양쪽 모두 알려진 속성에 대해 평균.
+  정답 속성은 one-hot(unknown은 제외), 예측 속성은 CLIP 확률. 비교할 속성이 없으면(distractor 등) 0.5(중립).
 - λ는 **train 이미지로 만든 검증 분할**에서 mAP 최대가 되도록 고름 (테스트셋 미사용).
   검증 분할: train ID마다 카메라별 첫 이미지를 query, 나머지를 gallery.
 - attr-source
-    oracle : query·gallery 모두 정답 속성 (속성이 완벽히 주어졌을 때의 상한선, 실제 시스템 아님)
+    oracle  : query·gallery 모두 정답 속성 (속성이 완벽히 주어졌을 때의 상한선, 실제 시스템 아님)
+    clip    : query·gallery 모두 CLIP zero-shot 예측 (완전 자동)
+    witness : query는 사람이 묘사한 속성(정답으로 대체), gallery는 CLIP 예측 (목격자 진술 + 영상 검색 시나리오)
 - 특징은 outputs/features/ 에 캐시 (L2 정규화 전 원본).
 """
 from __future__ import annotations
@@ -24,6 +27,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from vastreid.clip_attr import ATTR_VALUES  # noqa: E402
 from vastreid.data import Item, list_split  # noqa: E402
 from vastreid.metrics import evaluate  # noqa: E402
 from vastreid.reid import extract, gpu_temp, load_model  # noqa: E402
@@ -44,28 +48,42 @@ def get_feats(model, data: Path, level: str, split: str, device: str, cache_dir:
     return items, f.cpu()
 
 
-def attr_matrix(pids: list[int], table: dict[int, dict]) -> np.ndarray:
-    """(N, 6) 정수 코드. 속성 없음/unknown = -1."""
-    vocab: dict[tuple[str, str], int] = {}
-    out = np.full((len(pids), len(ATTRS)), -1, np.int32)
-    for i, pid in enumerate(pids):
-        a = table.get(pid)
-        if a is None:
-            continue
-        for j, k in enumerate(ATTRS):
-            v = str(a[k])
-            if v != "unknown":
-                out[i, j] = vocab.setdefault((k, v), len(vocab))
-    return out
+AttrRep = dict  # attr -> (probs (N, V) float32, mask (N,) bool)
 
 
-def agreement(qa: np.ndarray, ga: np.ndarray, device: str) -> torch.Tensor:
-    q = torch.from_numpy(qa).to(device)[:, None, :]
-    g = torch.from_numpy(ga).to(device)[None, :, :]
-    known = (q >= 0) & (g >= 0)
-    match = ((q == g) & known).sum(-1).float()
-    n = known.sum(-1).float()
-    return torch.where(n > 0, match / n.clamp(min=1), torch.full_like(n, 0.5))
+def gt_rep(pids: list[int], table: dict[int, dict]) -> AttrRep:
+    rep = {}
+    for k, vals in ATTR_VALUES.items():
+        P = np.zeros((len(pids), len(vals)), np.float32)
+        M = np.zeros(len(pids), bool)
+        for i, pid in enumerate(pids):
+            a = table.get(pid)
+            if a is None or str(a[k]) == "unknown":
+                continue
+            P[i, vals.index(str(a[k]))] = 1.0
+            M[i] = True
+        rep[k] = (P, M)
+    return rep
+
+
+def clip_rep(level: str, split: str, items: list[Item], idx=None) -> AttrRep:
+    d = np.load(ROOT / f"outputs/attr_probs/clip_ViT-B-16__{level}__{split}.npz")
+    if not np.array_equal(d["pids"], np.array([x.pid for x in items])):
+        raise RuntimeError(f"CLIP 확률과 이미지 목록 불일치: {level}/{split} (tools/clip_attributes.py 재실행)")
+    sel = slice(None) if idx is None else np.asarray(idx)
+    return {k: (d[k][sel].astype(np.float32), np.ones(len(d[k][sel]), bool)) for k in ATTR_VALUES}
+
+
+def agreement(qa: AttrRep, ga: AttrRep, device: str) -> torch.Tensor:
+    num = den = None
+    for k in ATTR_VALUES:
+        qp, qm = (torch.from_numpy(x).to(device) for x in qa[k])
+        gp, gm = (torch.from_numpy(x).to(device) for x in ga[k])
+        both = qm.float()[:, None] * gm.float()[None, :]
+        term = (qp @ gp.T) * both
+        num = term if num is None else num + term
+        den = both if den is None else den + both
+    return torch.where(den > 0, num / den.clamp(min=1), torch.full_like(den, 0.5))
 
 
 def run(qf, gf, qi, gi, qa, ga, lam, device) -> dict:
@@ -91,11 +109,12 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", type=Path, default=ROOT / "data/vast")
     ap.add_argument("--weights", type=Path, default=ROOT / "weights/osnet_x1_0_market1501.pth")
-    ap.add_argument("--attr-source", default="oracle", choices=["oracle"])
+    ap.add_argument("--attr-source", default="oracle", choices=["oracle", "clip", "witness"])
     ap.add_argument("--levels", nargs="+", default=["normal", "low", "extreme"])
     ap.add_argument("--lambdas", nargs="+", type=float, default=[0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5])
-    ap.add_argument("--out", type=Path, default=ROOT / "results/rerank_oracle.csv")
+    ap.add_argument("--out", type=Path, default=None, help="기본: results/rerank_<attr-source>.csv")
     args = ap.parse_args()
+    args.out = args.out or ROOT / f"results/rerank_{args.attr_source}.csv"
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     persons = json.loads((ROOT / "annotations/person_attributes.json").read_text(encoding="utf-8"))["persons"]
@@ -114,16 +133,20 @@ def main():
             qi_idx, gi_idx = val_split(tq_items)
             vq = [tq_items[i] for i in qi_idx]
             vg = [tg_items[i] for i in gi_idx]
-            vqa = attr_matrix([x.pid for x in vq], table)
-            vga = attr_matrix([x.pid for x in vg], table)
+            vqa = (gt_rep([x.pid for x in vq], table) if args.attr_source in ("oracle", "witness")
+                   else clip_rep(ql, "train", tq_items, qi_idx))
+            vga = (gt_rep([x.pid for x in vg], table) if args.attr_source == "oracle"
+                   else clip_rep(gl, "train", tg_items, gi_idx))
             val = {lam: run(tq_f[qi_idx], tg_f[gi_idx], vq, vg, vqa, vga, lam, device)["mAP"] for lam in args.lambdas}
             best = max(val, key=val.get)
 
             # ---- 테스트셋 평가 (λ=0, λ*)
             qi, qf = get_feats(model, args.data, ql, "query", device, cache)
             gi, gf = get_feats(model, args.data, gl, "gallery", device, cache)
-            qa = attr_matrix([x.pid for x in qi], table)
-            ga = attr_matrix([x.pid for x in gi], table)
+            qa = (gt_rep([x.pid for x in qi], table) if args.attr_source in ("oracle", "witness")
+                  else clip_rep(ql, "query", qi))
+            ga = (gt_rep([x.pid for x in gi], table) if args.attr_source == "oracle"
+                  else clip_rep(gl, "gallery", gi))
             for tag, lam in [("cosine", 0.0), ("rerank", best)]:
                 r = run(qf, gf, qi, gi, qa, ga, lam, device)
                 rows.append({"attr_source": args.attr_source, "method": tag, "lambda": lam, "protocol": proto,

@@ -21,3 +21,4 @@ python-dotenv>=1.0
 # ultralytics        # YOLO + ByteTrack/BoT-SORT
 # trackeval          # git+https://github.com/JonathonLuiten/TrackEval.git
 # gradio
+open_clip_torch>=3.0   # CLIP zero-shot 속성 예측

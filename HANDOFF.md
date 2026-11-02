@@ -335,3 +335,9 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - `tools/rerank.py --attr-source oracle` → `results/rerank_oracle.csv`: 상한선. low/low R1 48.1 → 76.1, cross low R1 23.0 → 61.0.
 - 주의: train 기반 검증은 OSNet이 train으로 학습되어 편향됨 (DEVLOG 시행착오 6).
 - **다음: CLIP zero-shot 속성 예측 → 현실적인 재순위화** (`--attr-source clip`), 이어서 VLM 저조도 속성 실험(API, 샘플).
+
+### CLIP 속성·현실적 재순위화 (11/2)
+- `open_clip_torch` 3.3.0, ViT-B-16/openai. 속성 확률은 `outputs/attr_probs/*.npz` (gitignore).
+- `results/attr_acc_clip.csv`: zero-shot 평균 정확도 normal 52.8 / low 46.2 / extreme 26.1. 소매·가방·모자는 다수 클래스보다 낮음.
+- `results/rerank_clip.csv`, `results/rerank_witness.csv`: **low→normal R1 23.0 → 27.8(clip) / 29.2(witness)**. 처음으로 확인된 개선. same-level은 +1%p 이하.
+- 다음 후보: (1) 속성 예측 정확도 개선 (CLIP 특징 위 선형 분류기 = 수 초짜리 로지스틱 회귀. 딥러닝 학습은 아님, 사용자 확인 필요), (2) VLM(Grok/GPT) 저조도 속성 정확도 비교 실험(샘플, API), (3) 데모.
