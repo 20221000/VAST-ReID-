@@ -44,3 +44,40 @@ def evaluate(distmat: np.ndarray, q_pids, g_pids, q_camids, g_camids, max_rank: 
         "mINP": float(np.mean(inps)),
         "num_valid_query": len(aps),
     }
+
+
+def evaluate_fast(dist, q_pids, g_pids, q_camids, g_camids, max_rank: int = 50, device: str | None = None,
+                  chunk: int = 512) -> dict:
+    """evaluate()와 같은 결과를 GPU에서 벡터화해 계산 (하이퍼파라미터 탐색용). dist: (Nq, Ng) numpy 또는 tensor."""
+    import torch
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    D = torch.as_tensor(dist, dtype=torch.float32)
+    qp, gp = torch.as_tensor(np.asarray(q_pids), device=device), torch.as_tensor(np.asarray(g_pids), device=device)
+    qc, gc = torch.as_tensor(np.asarray(q_camids), device=device), torch.as_tensor(np.asarray(g_camids), device=device)
+    max_rank = min(max_rank, D.shape[1])
+    hits, aps, inps = [], [], []
+    for s in range(0, D.shape[0], chunk):
+        d = D[s:s + chunk].to(device)
+        order = torch.sort(d, dim=1, stable=True).indices
+        gpo, gco = gp[order], gc[order]
+        same_pid = gpo == qp[s:s + chunk, None]
+        keep = ~(same_pid & (gco == qc[s:s + chunk, None]))
+        match = same_pid & keep
+        rank = torch.cumsum(keep.int(), dim=1)            # 제외 후 순위 (1부터)
+        cm = torch.cumsum(match.int(), dim=1)
+        nm = cm[:, -1]
+        valid = nm > 0
+        first = torch.where(match, rank, torch.full_like(rank, 10**9)).min(dim=1).values
+        hit = (first[:, None] <= torch.arange(1, max_rank + 1, device=device)[None, :]).float()
+        prec = torch.where(match, cm.float() / rank.float(), torch.zeros_like(rank, dtype=torch.float32))
+        ap = prec.sum(1) / nm.clamp(min=1)
+        last = torch.where(match, rank, torch.zeros_like(rank)).max(dim=1).values
+        inp = nm.float() / last.clamp(min=1).float()
+        hits.append(hit[valid]); aps.append(ap[valid]); inps.append(inp[valid])
+    cmc = torch.cat(hits).mean(0).cpu().numpy()
+    ap, inp = torch.cat(aps), torch.cat(inps)
+    if len(ap) == 0:
+        raise RuntimeError("유효한 query가 없습니다.")
+    return {"rank1": float(cmc[0]), "rank5": float(cmc[min(4, max_rank - 1)]),
+            "rank10": float(cmc[min(9, max_rank - 1)]), "mAP": float(ap.mean()), "mINP": float(inp.mean()),
+            "num_valid_query": int(len(ap))}

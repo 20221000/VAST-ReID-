@@ -378,3 +378,12 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
   8. 트래킹: YOLO+ByteTrack 데모 → MOT17 저조도 합성 정량 평가(HOTA/IDF1) 예정
   9. 데모: Gradio 3탭 완료(로컬), 공개는 HF Spaces 예정 (키 미포함)
   10. 평가 모델: OSNet 중심 (TransReID, CLIP-ReID는 미진행)
+
+### AdaBN + 확장 CSLS (11/2) — 현재 최고 결과
+- `tools/adabn.py` → `results/adabn.csv`, 특징 캐시 `outputs/features/osnet_x1_0__adabn-{low,extreme}__*`
+- `tools/hubness.py --feat adabn` → `results/hubness_adabn.csv`; 원래 특징 확장 탐색 → `results/hubness_wide.csv`
+- `vastreid/metrics.py: evaluate_fast` (GPU 벡터화, evaluate와 동일 결과, 50배 빠름)
+- **Low→Normal R1: 23.0 → AdaBN 85.3 → AdaBN+CSLS+목격자 86.8 / Extreme→Normal 0.0 → 35.6**
+- 데모: AdaBN·CSLS 옵션, 벤치마크 종합 그래프. README·DEVLOG 갱신.
+- 한계: 합성 저조도는 AdaBN과 잘 맞아 효과가 과대평가됐을 수 있음.
+- 다음: MOT17 트래킹 (ByteTrack vs BoT-SORT+OSNet vs +AdaBN), HF Spaces 공개판, 발표 자료, 노션 기획서 반영(사용자가 붙여넣기).

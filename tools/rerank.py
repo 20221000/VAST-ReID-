@@ -36,8 +36,15 @@ from vastreid.reid import extract, gpu_temp, load_model  # noqa: E402
 ATTRS = ["upper_color", "lower_color", "sleeve", "lower_type", "bag", "hat"]
 
 
-def get_feats(model, data: Path, level: str, split: str, device: str, cache_dir: Path) -> tuple[list[Item], torch.Tensor]:
+def get_feats(model, data: Path, level: str, split: str, device: str, cache_dir: Path,
+              tag: str = "none") -> tuple[list[Item], torch.Tensor]:
+    """tag='adabn' 이면 저조도 이미지는 tools/adabn.py 가 만든 AdaBN 특징 캐시 사용 (normal은 원래 모델)."""
     items = list_split(data, level, split)
+    if tag == "adabn" and level != "normal":
+        cp = cache_dir / f"osnet_x1_0__adabn-{level}__{level}__{split}.pt"
+        if not cp.exists():
+            raise FileNotFoundError(f"{cp} 없음 → python tools/adabn.py 먼저 실행")
+        return items, torch.load(cp, weights_only=True)["feats"]
     cp = cache_dir / f"osnet_x1_0__none__{level}__{split}.pt"
     if cp.exists():
         d = torch.load(cp, weights_only=True)

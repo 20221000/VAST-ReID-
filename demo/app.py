@@ -44,9 +44,11 @@ PERSONS = {int(k): v for k, v in json.loads(
 
 # ------------------------------------------------------------------ 인덱스
 @lru_cache(maxsize=None)
-def index(level: str, split: str):
+def index(level: str, split: str, feat: str = "none"):
+    """feat='adabn': 저조도 이미지는 AdaBN(해당 조도로 BN 통계 재추정) 모델 특징 사용 (tools/adabn.py)."""
     items = list_split(DATA, level, split)
-    d = torch.load(ROOT / f"outputs/features/osnet_x1_0__none__{level}__{split}.pt", weights_only=True)
+    tag = f"adabn-{level}" if feat == "adabn" and level != "normal" else "none"
+    d = torch.load(ROOT / f"outputs/features/osnet_x1_0__{tag}__{level}__{split}.pt", weights_only=True)
     feats = torch.nn.functional.normalize(d["feats"].float(), dim=1).numpy()
     probs = None
     pp = ROOT / f"outputs/attr_probs/probe__{level}__{split}.npz"
@@ -61,6 +63,17 @@ def reid_model():
     from vastreid.reid import load_model
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     return load_model("osnet_x1_0", ROOT / "weights/osnet_x1_0_market1501.pth", dev), dev
+
+
+@lru_cache(maxsize=None)
+def hub_score(q_level: str, g_level: str, feat: str = "none", k: int = 50) -> np.ndarray:
+    """CSLS hub 점수 r_g: gallery 이미지와 'query 조도의 train 이미지'의 유사도 상위 k개 평균 (tools/hubness.py와 동일)."""
+    _, gf, _ = index(g_level, "gallery", feat)
+    _, ref, _ = index(q_level, "train", feat)
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    g, r = torch.from_numpy(gf).to(dev), torch.from_numpy(ref).to(dev)
+    out = [(g[s:s + 4096] @ r.T).topk(k, dim=1).values.mean(1) for s in range(0, len(g), 4096)]
+    return torch.cat(out).cpu().numpy()
 
 
 def sample_queries():
@@ -106,8 +119,9 @@ def show_samples(level):
     return [(str(items[i].path), f"#{n}") for n, i in enumerate(SAMPLE_IDX)]
 
 
-def image_search(sel, upload, q_level, g_level, lam, *attr_choices):
-    gi, gf, gp = index(g_level, "gallery")
+def image_search(sel, upload, q_level, g_level, use_adabn, use_csls, beta, lam, *attr_choices):
+    feat = "adabn" if use_adabn and upload is None else "none"  # 업로드 이미지는 원래 모델
+    gi, gf, gp = index(g_level, "gallery", feat)
     if upload is not None:
         from vastreid.reid import extract
         import cv2
@@ -121,11 +135,13 @@ def image_search(sel, upload, q_level, g_level, lam, *attr_choices):
     else:
         if sel is None:
             return None, [], "왼쪽에서 query 샘플을 고르거나 이미지를 업로드하세요."
-        qi, qfs, _ = index(q_level, "query")
+        qi, qfs, _ = index(q_level, "query", feat)
         idx = SAMPLE_IDX[sel]
         qf, q_pid, q_cam, q_path = qfs[idx], qi[idx].pid, qi[idx].camid, str(qi[idx].path)
 
     score = gf @ qf
+    if use_csls:
+        score = score - beta * hub_score(q_level, g_level, feat)
     rep = witness_vec(dict(zip(ATTR_VALUES, attr_choices)))
     agr = agreement(rep, gp)
     if agr is not None:
@@ -141,6 +157,10 @@ def image_search(sel, upload, q_level, g_level, lam, *attr_choices):
         top.append((str(g.path), f"#{r} · 점수 {score[j]:.3f} · cam{g.camid + 1}{badge}"))
 
     msg = [f"**gallery**: {LEVEL_KO[g_level]} {len(gi):,}장"]
+    if feat == "adabn":
+        msg.append("**AdaBN**: 저조도 이미지는 해당 조도로 BN 통계를 다시 계산한 모델로 특징 추출")
+    if use_csls:
+        msg.append(f"**Hub 보정(CSLS)**: β={beta} (어두운 query에 두루 비슷한 gallery 이미지의 점수를 낮춤)")
     if rep:
         msg.append("**목격자 속성 재순위화**: " + ", ".join(f"{ATTR_KO[k]}={VALUE_KO.get(v, v)}"
                                                 for k, v in zip(ATTR_VALUES, attr_choices) if v != ANY)
@@ -273,6 +293,24 @@ def bench_rerank(metric):
     return pd.DataFrame(rows)
 
 
+def bench_overall(metric):
+    """방법별 종합 비교 (results/hubness_wide.csv, results/hubness_adabn.csv)."""
+    col = {"Rank-1": "rank1", "mAP": "mAP"}[metric]
+    label = {("none", "cosine"): "1. 외형만", ("none", "csls"): "2. + CSLS",
+             ("none", "csls+witness-probe"): "3. + CSLS + 목격자 속성", ("adabn", "cosine"): "4. AdaBN",
+             ("adabn", "csls+witness-probe"): "5. AdaBN + CSLS + 목격자 속성"}
+    rows = []
+    for name, feat in [("hubness_wide.csv", "none"), ("hubness_adabn.csv", "adabn")]:
+        df = read(name)
+        if df is None:
+            continue
+        for _, r in df.iterrows():
+            key = (feat, r.method)
+            if key in label and r.query_level != "normal":
+                rows.append({"조건": f"{r.query_level}→{r.gallery_level}", "방법": label[key], metric: r[col] * 100})
+    return pd.DataFrame(rows)
+
+
 def bench_enhance(metric):
     col = {"Rank-1": "rank1", "mAP": "mAP"}[metric]
     rows = []
@@ -318,6 +356,12 @@ def bench_cards():
         c1 = get(p, protocol="cross", query_level="low", method="rerank")
         s += (f"- 목격자 속성 + 선형 분류기 재순위화(코사인 기준): 야간→주간 Rank-1 "
               f"**{c0.rank1*100:.1f}% → {c1.rank1*100:.1f}%** (+{(c1.rank1-c0.rank1)*100:.1f}%p)\n")
+    a = read("hubness_adabn.csv")
+    if a is not None:
+        x = get(a, protocol="cross", query_level="low", method="csls+witness-probe")
+        e = get(a, protocol="cross", query_level="extreme", method="csls+witness-probe")
+        s += (f"- **AdaBN + CSLS + 목격자 속성**: 야간→주간 Rank-1 **{x.rank1*100:.1f}%**, "
+              f"극저조도→주간 **{e.rank1*100:.1f}%**\n")
     s += "- 저조도 개선(감마·CLAHE·Zero-DCE)은 ReID 성능을 높이지 못함 (아래 그래프)"
     return s
 
@@ -349,6 +393,10 @@ def build():
                         sel = gr.State(None)
                         upload = gr.Image(label="또는 이미지 업로드 (선택)", type="numpy", height=200)
                         g_level = gr.Radio(LEVELS, value="normal", label="gallery 조도 (기록 영상)")
+                        use_adabn = gr.Checkbox(True, label="AdaBN 사용 (저조도용 BN 통계, 업로드 이미지는 제외)")
+                        with gr.Accordion("Hub 보정 (CSLS)", open=True):
+                            use_csls = gr.Checkbox(True, label="Hub 보정 사용")
+                            beta = gr.Slider(0, 2, value=1.0, step=0.25, label="β (hub 보정 강도)")
                         with gr.Accordion("목격자 속성 (재순위화)", open=True):
                             attr_inputs = [gr.Dropdown([ANY] + ATTR_VALUES[k], value=ANY, label=ATTR_KO[k])
                                            for k in ATTR_VALUES]
@@ -363,7 +411,8 @@ def build():
                 def on_select(evt: gr.SelectData):
                     return evt.index
                 samples.select(on_select, None, sel)
-                btn.click(image_search, [sel, upload, q_level, g_level, lam, *attr_inputs], [q_view, results, info])
+                btn.click(image_search, [sel, upload, q_level, g_level, use_adabn, use_csls, beta, lam, *attr_inputs],
+                          [q_view, results, info])
 
             with gr.Tab("텍스트 검색"):
                 with gr.Row():
@@ -380,6 +429,8 @@ def build():
             with gr.Tab("벤치마크"):
                 gr.Markdown(bench_cards())
                 metric = gr.Radio(["Rank-1", "mAP"], value="Rank-1", label="지표")
+                p0 = gr.BarPlot(bench_overall("Rank-1"), x="조건", y="Rank-1", color="방법",
+                                title="방법별 종합 비교 (코사인 기준)", height=380)
                 p1 = gr.BarPlot(bench_rerank("Rank-1"), x="조건", y="Rank-1", color="방법",
                                 title="속성 재순위화 (OSNet + 속성)", height=360)
                 p2 = gr.BarPlot(bench_enhance("Rank-1"), x="방법", y="Rank-1", color="조도",
@@ -388,8 +439,9 @@ def build():
                                 title="조도별 속성 인식 정확도 (50명 샘플)", height=360)
 
                 def upd(m):
-                    return (gr.BarPlot(bench_rerank(m), y=m), gr.BarPlot(bench_enhance(m), y=m))
-                metric.change(upd, metric, [p1, p2])
+                    return (gr.BarPlot(bench_overall(m), y=m), gr.BarPlot(bench_rerank(m), y=m),
+                            gr.BarPlot(bench_enhance(m), y=m))
+                metric.change(upd, metric, [p0, p1, p2])
                 _ = p3
     return demo
 

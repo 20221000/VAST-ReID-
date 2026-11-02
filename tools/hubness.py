@@ -2,6 +2,7 @@
 """Hubness 완화(CSLS 방식) + 속성 재순위화 조합 평가. 학습 없음.
 
     python tools/hubness.py      # → results/hubness.csv
+    python tools/hubness.py --ks 10 50 100 --betas 0 0.25 0.5 0.75 1 1.25 1.5 2 --out results/hubness_wide.csv
 
 score(q, g) = cos(q, g) − β · r_g + λ · attr_agreement(q, g)
   r_g = gallery 이미지 g와 참조 집합 R의 코사인 유사도 상위 k개 평균 (g가 'query 쪽 이미지들 전반'에 얼마나 가까운가)
@@ -12,6 +13,7 @@ score(q, g) = cos(q, g) − β · r_g + λ · attr_agreement(q, g)
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import sys
@@ -25,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 from rerank import agreement, clip_rep, get_feats, gt_rep, val_split  # noqa: E402
-from vastreid.metrics import evaluate  # noqa: E402
+from vastreid.metrics import evaluate_fast  # noqa: E402
 from vastreid.reid import gpu_temp, load_model  # noqa: E402
 
 KS = [10, 50]
@@ -50,8 +52,8 @@ def score_eval(qf, gf, rg, beta, agr, lam, qi, gi):
     s = qf @ gf.T - beta * rg[None, :]
     if lam:
         s = s + lam * agr
-    r = evaluate((-s).cpu().numpy(), [x.pid for x in qi], [x.pid for x in gi],
-                 [x.camid for x in qi], [x.camid for x in gi])
+    r = evaluate_fast(-s, [x.pid for x in qi], [x.pid for x in gi],
+                      [x.camid for x in qi], [x.camid for x in gi])  # evaluate()와 동일 결과, GPU 벡터화
     return r, s
 
 
@@ -62,6 +64,15 @@ def hub_stats(s):
 
 
 def main():
+    global KS, BETAS, LAMBDAS
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ks", nargs="+", type=int, default=KS)
+    ap.add_argument("--betas", nargs="+", type=float, default=BETAS)
+    ap.add_argument("--lambdas", nargs="+", type=float, default=LAMBDAS)
+    ap.add_argument("--out", type=Path, default=ROOT / "results/hubness.csv")
+    ap.add_argument("--feat", default="none", choices=["none", "adabn"], help="adabn: 저조도 특징에 AdaBN 모델 사용")
+    args = ap.parse_args()
+    KS, BETAS, LAMBDAS = args.ks, args.betas, args.lambdas
     t0 = time.time()
     table = {int(k): v for k, v in json.loads(
         (ROOT / "annotations/person_attributes.json").read_text(encoding="utf-8"))["persons"].items()}
@@ -72,8 +83,8 @@ def main():
              ("same", "extreme", "extreme"), ("cross", "extreme", "normal")]
     for proto, ql, gl in conds:
         # ---------- 검증 분할
-        tq, tqf = get_feats(model, data, ql, "train", DEV, cache)
-        tg, tgf = get_feats(model, data, gl, "train", DEV, cache)
+        tq, tqf = get_feats(model, data, ql, "train", DEV, cache, args.feat)
+        tg, tgf = get_feats(model, data, gl, "train", DEV, cache, args.feat)
         qi_idx, gi_idx = val_split(tq)
         vq, vg = [tq[i] for i in qi_idx], [tg[i] for i in gi_idx]
         vqf, vgf, ref = norm(tqf[qi_idx]), norm(tgf[gi_idx]), norm(tqf)
@@ -94,8 +105,8 @@ def main():
                     vqf, vgf, v_rg[k_star], beta, agr, lam, vq, vg)[0]["mAP"])
 
         # ---------- 테스트
-        qi, qf = get_feats(model, data, ql, "query", DEV, cache)
-        gi, gf = get_feats(model, data, gl, "gallery", DEV, cache)
+        qi, qf = get_feats(model, data, ql, "query", DEV, cache, args.feat)
+        gi, gf = get_feats(model, data, gl, "gallery", DEV, cache, args.feat)
         qf, gf = norm(qf), norm(gf)
         rg = r_gallery(gf, ref, k_star)  # 참조 = train (테스트와 ID 겹치지 않음)
         agr = {
@@ -109,15 +120,15 @@ def main():
         for name, beta, src, lam in methods:
             r, s = score_eval(qf, gf, rg, beta, agr[src] if src else None, lam, qi, gi)
             n_uniq, hub20 = hub_stats(s)
-            rows.append({"method": name, "protocol": proto, "query_level": ql, "gallery_level": gl,
+            rows.append({"feat": args.feat, "method": name, "protocol": proto, "query_level": ql, "gallery_level": gl,
                          "k": k_star, "beta": beta, "lambda": lam,
-                         **{m: round(v, 4) if isinstance(v, float) else v for m, v in r.items()},
+                         **{m: round(v, 6) if isinstance(v, float) else v for m, v in r.items()},
                          "top10_unique_gallery": n_uniq, "top20_hub_share": round(hub20, 4)})
             print(f"  {proto:5s} {ql:7s}→{gl:7s} {name:20s} k={k_star} β={beta:<4} λ={lam:<4} "
                   f"R1 {r['rank1']*100:5.1f} mAP {r['mAP']*100:5.1f}  uniq {n_uniq:5d} hub20 {hub20*100:4.1f}%",
                   flush=True)
     print(f"[done] {time.time() - t0:.1f}s  GPU {gpu_temp()}°C")
-    out = ROOT / "results/hubness.csv"
+    out = args.out
     with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()
