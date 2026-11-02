@@ -1,0 +1,23 @@
+# AI API 설정 (반 공용 키이므로 호출량을 엄격히 제한)
+# 키는 레포 루트의 .env (gitignore) 에서만 읽음: XAI_API_KEY, OPENAI_API_KEY
+
+provider: xai                # xai | openai
+
+providers:
+  xai:
+    base_url: https://api.x.ai/v1
+    key_env: XAI_API_KEY
+    text_model: grok-4.20-0309-non-reasoning
+    vision_model: grok-4.20-0309-non-reasoning
+  openai:
+    base_url: null           # SDK 기본값
+    key_env: OPENAI_API_KEY
+    text_model: gpt-4.1-mini
+    vision_model: gpt-4.1-mini
+
+# 실행(프로세스)당 실제 API 호출 상한. 캐시 적중은 세지 않음.
+max_calls_per_run: 50
+max_output_tokens: 400
+
+# 응답 캐시: 같은 (provider, model, 입력) 이면 API를 다시 부르지 않음
+cache_dir: outputs/api_cache

@@ -1,0 +1,6 @@
+model,enhance,protocol,query_level,gallery_level,rank1,rank5,rank10,mAP,mINP,num_valid_query,num_query,num_gallery
+osnet_x1_0,none,same,normal,normal,0.9448,0.9783,0.986,0.8256,0.5102,3368,3368,15913
+osnet_x1_0,none,same,low,low,0.4846,0.6588,0.7295,0.2242,0.0263,3368,3368,15913
+osnet_x1_0,none,cross,low,normal,0.255,0.3827,0.451,0.2028,0.0764,3368,3368,15913
+osnet_x1_0,none,same,extreme,extreme,0.0252,0.0754,0.1149,0.0096,0.0013,3368,3368,15913
+osnet_x1_0,none,cross,extreme,normal,0.0,0.0009,0.0036,0.0028,0.0015,3368,3368,15913

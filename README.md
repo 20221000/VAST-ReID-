@@ -62,11 +62,20 @@ Python, PyTorch, torchreid, Ultralytics YOLO, ByteTrack, CLIP, Zero-DCE, Retinex
 ```bash
 git clone https://github.com/<user>/VAST-ReID.git
 cd VAST-ReID
-pip install -r requirements.txt
-python tools/synthesize_lowlight.py --src data/market1501 --out data/vast
-python tools/evaluate.py --model osnet --split low
-python app.py   # 데모 실행
+uv venv --python 3.12 .venv && source .venv/bin/activate
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+uv pip install -r requirements.txt
+
+# 데이터 (Kaggle 토큰은 환경변수로만 전달)
+export KAGGLE_API_TOKEN=<your_token>
+kaggle datasets download iiierie/market-1501-v15-09-15 -p data/raw --unzip
+
+# 저조도 합성: data/vast/{normal,low,extreme}/{train,query,gallery}
+python tools/synthesize_lowlight.py --src data/raw/Market-1501-v15.09.15 --out data/vast \
+    --grid docs/figures/lowlight_grid.jpg
 ```
+
+![low-light grid](docs/figures/lowlight_grid.jpg)
 
 ## Author
 - 송민호 (동양미래대학교)

@@ -1,0 +1,42 @@
+# 저조도 합성 설정 (tools/synthesize_lowlight.py)
+#
+# 파이프라인 (sRGB 8bit 이미지 기준):
+#   1) sRGB -> linear  (역감마, IEC 61966-2-1)
+#   2) 약한 광학 블러   Gaussian (blur_sigma)
+#   3) 노출 감소       linear *= exposure
+#   4) 색 틀어짐       R/B 채널 게인 (가로등·야간 CCTV 색감)
+#   5) 센서 노이즈     Poisson(shot) + Gaussian(read), linear 공간
+#   6) linear -> sRGB, 8bit 양자화, JPEG 저장(jpeg_quality)
+#
+# normal = 원본 복사 (밝기 측정과 폴더 구조 통일 목적).
+# 모든 범위 [a, b]는 이미지마다 균등분포로 샘플링되고,
+# 난수는 (seed, 레벨, 파일 상대경로)로 결정되므로 재실행해도 결과가 같음.
+
+seed: 42
+
+levels:
+  low:
+    exposure: [0.15, 0.30]        # linear 밝기 배율
+    shot_noise: [0.004, 0.010]    # Poisson 스케일 (linear 0~1 단위, 클수록 노이즈 큼)
+    read_noise: [0.002, 0.005]    # Gaussian sigma (linear 0~1)
+    blur_sigma: [0.0, 0.6]        # 픽셀 단위
+    color_gain_r: [1.00, 1.08]
+    color_gain_b: [0.88, 1.00]
+    jpeg_quality: [70, 90]
+  extreme:
+    exposure: [0.03, 0.08]
+    shot_noise: [0.008, 0.020]
+    read_noise: [0.004, 0.010]
+    blur_sigma: [0.3, 1.0]
+    color_gain_r: [1.00, 1.15]
+    color_gain_b: [0.78, 0.95]
+    jpeg_quality: [55, 80]
+
+# MOT 모드: 노출·색감·블러·JPEG 품질은 시퀀스당 1회 샘플(프레임 간 밝기 깜빡임 방지),
+# 노이즈만 프레임마다 새로 생성.
+
+# Market-1501 원본 폴더 -> 출력 split 이름
+market1501_splits:
+  bounding_box_train: train
+  query: query
+  bounding_box_test: gallery

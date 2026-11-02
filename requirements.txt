@@ -1,0 +1,23 @@
+# PyTorch는 RTX 5080(Blackwell, sm_120) 지원을 위해 cu128 이상 빌드를 별도로 설치:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# (이 파일에는 torch를 넣지 않음: 기본 PyPI 빌드가 설치되는 것을 막기 위함)
+
+# --- 저조도 합성 / 공통 ---
+numpy>=1.26
+opencv-python>=4.10
+pyyaml>=6.0
+tqdm>=4.66
+scipy>=1.11            # market_attribute.mat 로드
+
+# --- 데이터 다운로드 (토큰은 환경변수 KAGGLE_API_TOKEN) ---
+kaggle>=1.7
+
+# --- AI API (Grok/OpenAI 호환, 키는 .env) ---
+openai>=1.50
+python-dotenv>=1.0
+
+# --- ReID / 트래킹 / 평가 (이후 단계) ---
+# torchreid          # git+https://github.com/KaiyangZhou/deep-person-reid.git
+# ultralytics        # YOLO + ByteTrack/BoT-SORT
+# trackeval          # git+https://github.com/JonathonLuiten/TrackEval.git
+# gradio
