@@ -328,3 +328,10 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 
 ### 개발 일지
 - `docs/DEVLOG.md`: 제출용 개발·학습 일지 (시간순 결정, 시행착오, 결과, 배운 점). **작업이 끝날 때마다 갱신할 것.**
+
+### 속성·재순위화 (11/2)
+- `tools/build_annotations.py` → `annotations/person_attributes.json` (6개 속성, gender/age/hair 제외), `data/vast/annotations/*.json`
+- `vastreid/reid.py`: 특징 추출 공용 모듈 (evaluate.py와 rerank.py가 함께 사용). 특징 캐시는 `outputs/features/`.
+- `tools/rerank.py --attr-source oracle` → `results/rerank_oracle.csv`: 상한선. low/low R1 48.1 → 76.1, cross low R1 23.0 → 61.0.
+- 주의: train 기반 검증은 OSNet이 train으로 학습되어 편향됨 (DEVLOG 시행착오 6).
+- **다음: CLIP zero-shot 속성 예측 → 현실적인 재순위화** (`--attr-source clip`), 이어서 VLM 저조도 속성 실험(API, 샘플).
