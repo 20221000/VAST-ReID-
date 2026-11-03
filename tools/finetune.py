@@ -7,6 +7,9 @@
     python tools/finetune.py --online --prefix osnet_x1_0-ftonline \
         --out weights/osnet_x1_0_vast_lowlight_ft_online.pth --csv results/finetune_online.csv
         # 온라인 저조도 합성: 미리 만든 low/extreme 대신 매번 새 노출·노이즈로 합성
+    python tools/finetune.py --online --msmt --pair --prefix osnet_x1_0-ftpair \
+        --out weights/osnet_x1_0_vast_lowlight_ft_pair.pth --csv results/finetune_pair.csv
+        # 짝 일관성(같은 사진의 밝은/어두운 특징을 가깝게) + batch-hard triplet + PK 샘플링(16명 × 4장)
 
 - 학습 데이터: train split만 (751명 × 3조도 = 38,808장). query·gallery는 학습에 전혀 사용하지 않음.
 - 에폭 수는 미리 고정 (테스트 성능으로 고르지 않음). 마지막 에폭 가중치를 그대로 사용.
@@ -57,34 +60,95 @@ class TrainDS(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.items) * (len(self.online_levels) if self.online_levels else 1)
 
+    def _degrade(self, img, lv):
+        if lv == "normal":
+            return img
+        # random 모듈은 DataLoader가 worker마다 다른 시드를 줌 → numpy 난수도 그걸로 생성
+        rng = np.random.default_rng(random.getrandbits(64))
+        p = sample_params(self.cfg["levels"][lv], rng)
+        img, _ = degrade(img, p, rng)
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, p.jpeg_quality])  # 오프라인 합성과 같은 JPEG 저장 효과
+        return cv2.imdecode(buf, cv2.IMREAD_COLOR)
+
     def _load(self, i):
         if not self.online_levels:
             return cv2.imread(str(self.items[i].path)), self.labels[i]
         n = len(self.items)
         it, lv = self.items[i % n], self.online_levels[i // n]
-        img = cv2.imread(str(it.path))
-        if lv != "normal":
-            # random 모듈은 DataLoader가 worker마다 다른 시드를 줌 → numpy 난수도 그걸로 생성
-            rng = np.random.default_rng(random.getrandbits(64))
-            p = sample_params(self.cfg["levels"][lv], rng)
-            img, _ = degrade(img, p, rng)
-            ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, p.jpeg_quality])  # 오프라인 합성과 같은 JPEG 저장 효과
-            img = cv2.imdecode(buf, cv2.IMREAD_COLOR)
-        return img, self.labels[i % n]
+        return self._degrade(cv2.imread(str(it.path)), lv), self.labels[i % n]
+
+    @staticmethod
+    def _augment(imgs):
+        """같은 반전·같은 erasing 영역을 imgs 전체에 적용 (짝 학습에서 조도만 다르게 하려고)."""
+        flip = random.random() < 0.5
+        xs = []
+        for img in imgs:
+            img = cv2.resize(img, (128, 256), interpolation=cv2.INTER_LINEAR)
+            if flip:
+                img = img[:, ::-1]
+            x = (img[..., ::-1].astype(np.float32) / 255.0 - MEAN) / STD
+            xs.append(torch.from_numpy(x.transpose(2, 0, 1).copy()))
+        if random.random() < 0.5:  # random erasing (ReID 표준 증강)
+            h, w = xs[0].shape[1:]
+            eh, ew = int(h * random.uniform(0.2, 0.5)), int(w * random.uniform(0.2, 0.5))
+            y0, x0 = random.randint(0, h - eh), random.randint(0, w - ew)
+            noise = torch.randn(3, eh, ew)
+            for x in xs:
+                x[:, y0:y0 + eh, x0:x0 + ew] = noise
+        return xs
 
     def __getitem__(self, i):
         img, y = self._load(i)
-        img = cv2.resize(img, (128, 256), interpolation=cv2.INTER_LINEAR)
-        if random.random() < 0.5:
-            img = img[:, ::-1]
-        x = (img[..., ::-1].astype(np.float32) / 255.0 - MEAN) / STD
-        x = torch.from_numpy(x.transpose(2, 0, 1).copy())
-        if random.random() < 0.5:  # random erasing (ReID 표준 증강)
-            h, w = x.shape[1:]
-            eh, ew = int(h * random.uniform(0.2, 0.5)), int(w * random.uniform(0.2, 0.5))
-            y0, x0 = random.randint(0, h - eh), random.randint(0, w - ew)
-            x[:, y0:y0 + eh, x0:x0 + ew] = torch.randn(3, eh, ew)
-        return x, y
+        return self._augment([img])[0], y
+
+
+class PairDS(TrainDS):
+    """--pair: 원본 1장에서 normal 1장 + 저조도 1장(low·extreme 반반, 매번 새 합성)을 만들어 짝으로 반환 → [2, 3, H, W].
+    짝 일관성 손실은 같은 사진의 밝은/어두운 특징을 가깝게 만들어 조도에 불변인 특징을 직접 학습.
+    p_extreme: 저조도 쪽이 extreme일 확률 (2/3이면 전체 이미지 중 extreme 1/3 = 기존 온라인 학습과 같은 비율)."""
+
+    def __init__(self, items, labels, cfg, p_extreme=0.5):
+        super().__init__(items, labels, None, cfg)
+        self.p_extreme = p_extreme
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, i):
+        img = cv2.imread(str(self.items[i].path))
+        dark = self._degrade(img, "extreme" if random.random() < self.p_extreme else "low")
+        return torch.stack(self._augment([img, dark])), self.labels[i]
+
+
+class PKSampler(torch.utils.data.Sampler):
+    """ReID 표준 PK 샘플링: 배치마다 P명 × K장. 사람이 K장보다 적으면 중복 허용."""
+
+    def __init__(self, labels, p, k, n_batches):
+        self.p, self.k, self.n_batches = p, k, n_batches
+        self.by_id = {}
+        for i, y in enumerate(labels):
+            self.by_id.setdefault(y, []).append(i)
+        self.ids = list(self.by_id)
+
+    def __len__(self):
+        return self.n_batches
+
+    def __iter__(self):
+        for _ in range(self.n_batches):
+            batch = []
+            for pid in random.sample(self.ids, self.p):
+                idx = self.by_id[pid]
+                batch += random.sample(idx, self.k) if len(idx) >= self.k else random.choices(idx, k=self.k)
+            yield batch
+
+
+def triplet_hard(f, y, margin=0.3):
+    """batch-hard triplet: 앵커마다 가장 먼 같은 사람, 가장 가까운 다른 사람."""
+    d = torch.cdist(f, f)
+    same = y[:, None] == y[None]
+    ap = (d * same).max(1).values
+    an = d.masked_fill(same, float("inf")).min(1).values
+    return torch.relu(ap - an + margin).mean()
 
 
 def build(num_classes=751):
@@ -114,7 +178,10 @@ def classifier_acc(model, dl, n_batches=20):
     for b, (x, y) in enumerate(dl):
         if b >= n_batches:
             break
+        if x.dim() == 5:  # 짝 배치 [B, 2, ...]
+            x, y = x.flatten(0, 1), y.repeat_interleave(2)
         out = model(x.to(DEV))
+        out = out[0] if isinstance(out, tuple) else out
         c += int((out.argmax(1).cpu() == y).sum())
         n += len(y)
     model.eval()
@@ -139,15 +206,26 @@ def train(args):
         labels += [mu[x.pid] for x in mi]
         n_cls += len(mu)
     cfg = yaml.safe_load((ROOT / "configs/lowlight.yaml").read_text(encoding="utf-8"))
-    ds = TrainDS(items, labels, LEVELS if args.online else None, cfg)
-    dl = torch.utils.data.DataLoader(ds, batch_size=args.batch, shuffle=True, num_workers=8, pin_memory=True,
-                                     drop_last=True, persistent_workers=True)
+    if args.pair:  # 에폭당 이미지 수를 기존 온라인 학습(원본 × 3조도)과 같게 맞춤
+        assert args.online, "--pair는 --online과 함께"
+        ds = PairDS(items, labels, cfg, args.pair_extreme)
+        n_batches = len(items) * len(LEVELS) // (2 * args.pk_p * args.pk_k)
+        dl = torch.utils.data.DataLoader(ds, batch_sampler=PKSampler(labels, args.pk_p, args.pk_k, n_batches),
+                                         num_workers=8, pin_memory=True, persistent_workers=True)
+    else:
+        ds = TrainDS(items, labels, LEVELS if args.online else None, cfg)
+        dl = torch.utils.data.DataLoader(ds, batch_size=args.batch, shuffle=True, num_workers=8, pin_memory=True,
+                                         drop_last=True, persistent_workers=True)
     model = build(n_cls)
+    if args.pair:
+        model.loss = "triplet"  # train 모드에서 (로짓, 특징) 반환
     if args.init:  # 이어서 학습: 이전 미세조정 가중치(분류기 포함)에서 시작
         model.load_state_dict(torch.load(args.init, map_location="cpu", weights_only=True), strict=True)
         print(f"[ft] init from {args.init}", flush=True)
     acc0 = classifier_acc(model, dl)
-    print(f"[ft] {'online ' if args.online else ''}{len(ds)} imgs/epoch, {n_cls} ids, 시작 시점 분류 정확도(분류기 매핑 확인용) {acc0*100:.1f}%", flush=True)
+    n_img = len(dl) * 2 * args.pk_p * args.pk_k if args.pair else len(ds)
+    print(f"[ft] {'online ' if args.online else ''}{'pair ' if args.pair else ''}{n_img} imgs/epoch, {n_cls} ids, "
+          f"시작 시점 분류 정확도(분류기 매핑 확인용) {acc0*100:.1f}%", flush=True)
     head = [p for n, p in model.named_parameters() if n.startswith("classifier")]
     body = [p for n, p in model.named_parameters() if not n.startswith("classifier")]
     opt = torch.optim.AdamW([{"params": body, "lr": args.lr}, {"params": head, "lr": args.lr * 10}],
@@ -161,12 +239,26 @@ def train(args):
     for ep in range(1, args.epochs + 1):
         model.train()
         tl = tc = tn = 0
+        tt = tk = 0.0
         te = time.time()
         for x, y in dl:
             x, y = x.to(DEV, non_blocking=True), y.to(DEV, non_blocking=True)
+            if args.pair:  # [B, 2, ...] → [normal0, dark0, normal1, dark1, ...]
+                x, y = x.flatten(0, 1), y.repeat_interleave(2)
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 out = model(x)
-                loss = crit(out.float(), y)
+                if args.pair:
+                    out, f = out
+                    f = f.float()
+                    tri = triplet_hard(f, y, args.margin)
+                    fn = torch.nn.functional.normalize(f, dim=1)
+                    # 어두운 특징을 같은 사진의 밝은 특징 쪽으로 (밝은 쪽은 stop-grad → 주간 성능 유지)
+                    cons = (1 - (fn[1::2] * fn[0::2].detach()).sum(1)).mean()
+                    loss = crit(out.float(), y) + tri + args.cons_w * cons
+                    tt += float(tri.detach()) * len(y)
+                    tk += float(cons.detach()) * len(y)
+                else:
+                    loss = crit(out.float(), y)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
@@ -174,7 +266,8 @@ def train(args):
             tl += float(loss.detach()) * len(y)
             tc += int((out.argmax(1) == y).sum())
             tn += len(y)
-        print(f"  epoch {ep:2d}/{args.epochs}  loss {tl/tn:.3f}  train acc {tc/tn*100:5.1f}%  "
+        extra = f"  (triplet {tt/tn:.3f}  consistency {tk/tn:.3f})" if args.pair else ""
+        print(f"  epoch {ep:2d}/{args.epochs}  loss {tl/tn:.3f}{extra}  train acc {tc/tn*100:5.1f}%  "
               f"{time.time()-te:.0f}s  GPU {gpu_temp()}°C", flush=True)
     model.eval()
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -250,6 +343,13 @@ def main():
     ap.add_argument("--online", action="store_true", help="온라인 저조도 합성 (매번 새 노출·노이즈)")
     ap.add_argument("--init", type=Path, default=None, help="이어서 학습할 미세조정 가중치")
     ap.add_argument("--msmt", action="store_true", help="MSMT17 train 추가 (data/raw/msmt17, --online 필요)")
+    ap.add_argument("--pair", action="store_true",
+                    help="짝 일관성 + batch-hard triplet + PK 샘플링 (--online 필요)")
+    ap.add_argument("--pk-p", type=int, default=16, help="--pair: 배치당 사람 수")
+    ap.add_argument("--pk-k", type=int, default=4, help="--pair: 사람당 원본 수 (짝이라 이미지는 2배)")
+    ap.add_argument("--margin", type=float, default=0.3, help="triplet margin")
+    ap.add_argument("--cons-w", type=float, default=1.0, help="짝 일관성 손실 가중치")
+    ap.add_argument("--pair-extreme", type=float, default=0.5, help="--pair: 저조도 쪽이 extreme일 확률")
     ap.add_argument("--prefix", default=PREFIX, help="특징 캐시 이름")
     ap.add_argument("--csv", type=Path, default=ROOT / "results/finetune.csv")
     args = ap.parse_args()

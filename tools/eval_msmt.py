@@ -32,7 +32,9 @@ MODELS = {"사전학습 (Market)": "weights/osnet_x1_0_market1501.pth",
           "미세조정 고정 합성": "weights/osnet_x1_0_vast_lowlight_ft.pth",
           "미세조정 온라인 합성": "weights/osnet_x1_0_vast_lowlight_ft_online.pth",
           "미세조정 온라인 + MSMT17 학습*": "weights/osnet_x1_0_vast_lowlight_ft_online_msmt.pth",
-          "최종 + 12 에폭 추가*": "weights/osnet_x1_0_vast_lowlight_ft_online_msmt_24.pth"}
+          "최종 + 12 에폭 추가*": "weights/osnet_x1_0_vast_lowlight_ft_online_msmt_24.pth",
+          "짝 일관성 + triplet (12 에폭)*": "weights/osnet_x1_0_vast_lowlight_ft_pair.pth",
+          "짝 + triplet, extreme 2/3 (12 에폭)*": "weights/osnet_x1_0_vast_lowlight_ft_pair_ext.pth"}
 
 
 def synth_queries(items, level, cfg):
