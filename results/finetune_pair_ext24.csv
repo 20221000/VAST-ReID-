@@ -1,0 +1,11 @@
+model,feat,method,protocol,query_level,gallery_level,rank1,rank5,rank10,mAP,mINP,num_valid_query
+osnet_x1_0-ftpairext24,none,cosine,same,normal,normal,0.895784,0.96348,0.977732,0.717734,0.340738,3368
+osnet_x1_0-ftpairext24,none,cosine,same,low,low,0.859561,0.950713,0.972387,0.658472,0.28063,3368
+osnet_x1_0-ftpairext24,none,cosine,cross,low,normal,0.86728,0.953979,0.972684,0.682013,0.311324,3368
+osnet_x1_0-ftpairext24,none,cosine,same,extreme,extreme,0.624406,0.83462,0.89133,0.394495,0.099181,3368
+osnet_x1_0-ftpairext24,none,cosine,cross,extreme,normal,0.68943,0.863717,0.900831,0.501606,0.197598,3368
+osnet_x1_0-ftpairext24,adabn,cosine,same,normal,normal,0.895784,0.96348,0.977732,0.717734,0.340738,3368
+osnet_x1_0-ftpairext24,adabn,cosine,same,low,low,0.836105,0.937945,0.960214,0.630086,0.257347,3368
+osnet_x1_0-ftpairext24,adabn,cosine,cross,low,normal,0.81443,0.931413,0.951306,0.624724,0.276615,3368
+osnet_x1_0-ftpairext24,adabn,cosine,same,extreme,extreme,0.422209,0.657957,0.749703,0.218837,0.033148,3368
+osnet_x1_0-ftpairext24,adabn,cosine,cross,extreme,normal,0.470309,0.670725,0.74614,0.323548,0.104986,3368

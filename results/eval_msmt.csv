@@ -20,3 +20,6 @@ model,query_level,gallery_level,rank1,rank5,mAP,mINP,num_valid_query
 "짝 + triplet, extreme 2/3 (12 에폭)*",normal,normal,0.514881,0.684021,0.257256,0.022932,11659
 "짝 + triplet, extreme 2/3 (12 에폭)*",low,normal,0.475941,0.640449,0.231998,0.02023,11659
 "짝 + triplet, extreme 2/3 (12 에폭)*",extreme,normal,0.317351,0.476284,0.15091,0.013082,11659
+"짝 + triplet, extreme 2/3 (24 에폭)*",normal,normal,0.513252,0.685565,0.25475,0.022818,11659
+"짝 + triplet, extreme 2/3 (24 에폭)*",low,normal,0.475084,0.640793,0.231406,0.020231,11659
+"짝 + triplet, extreme 2/3 (24 에폭)*",extreme,normal,0.323012,0.485719,0.15281,0.013048,11659
