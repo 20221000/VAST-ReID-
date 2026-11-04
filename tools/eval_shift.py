@@ -42,7 +42,8 @@ MODELS = {"osnet_x1_0 (사전학습)": "weights/osnet_x1_0_market1501.pth",
           "최종 + 12 에폭 추가": "weights/osnet_x1_0_vast_lowlight_ft_online_msmt_24.pth",
           "짝 일관성 + triplet (12 에폭)": "weights/osnet_x1_0_vast_lowlight_ft_pair.pth",
           "짝 + triplet, extreme 2/3 (12 에폭)": "weights/osnet_x1_0_vast_lowlight_ft_pair_ext.pth",
-          "짝 + triplet, extreme 2/3 (24 에폭)": "weights/osnet_x1_0_vast_lowlight_ft_pair_ext_24.pth"}
+          "짝 + triplet, extreme 2/3 (24 에폭)": "weights/osnet_x1_0_vast_lowlight_ft_pair_ext_24.pth",
+          "CLIP ViT-B/16 짝 + triplet (12 에폭)": "weights/clip_vit_b16_vast_lowlight_ft_pair.pth"}
 
 
 def synth(shift: str, cfg: dict) -> list[Path]:
@@ -69,7 +70,7 @@ def main():
     for name, w in MODELS.items():
         if not (ROOT / w).exists():
             continue
-        m = load_model("osnet_x1_0", ROOT / w, DEV)
+        m = load_model(None, ROOT / w, DEV)
         gf, _ = extract(m, [x.path for x in gi], DEV)
         gf = torch.nn.functional.normalize(gf.float().to(DEV), dim=1)
         for s, ps in [("extreme(기존)", [x.path for x in list_split(ROOT / "data/vast", "extreme", "query")]),

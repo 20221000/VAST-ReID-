@@ -10,6 +10,8 @@
     python tools/finetune.py --online --msmt --pair --prefix osnet_x1_0-ftpair \
         --out weights/osnet_x1_0_vast_lowlight_ft_pair.pth --csv results/finetune_pair.csv
         # 짝 일관성(같은 사진의 밝은/어두운 특징을 가깝게) + batch-hard triplet + PK 샘플링(16명 × 4장)
+    python tools/finetune.py --arch clip_vit_b16 --online --msmt --pair --pair-extreme 0.6667 --lr 2e-5         --prefix clip_vit_b16-ftpair --out weights/clip_vit_b16_vast_lowlight_ft_pair.pth --csv results/finetune_clip_pair.csv
+        # 더 큰 백본: CLIP ViT-B/16 이미지 인코더 (vastreid/clip_reid.py, 분류기는 새로 초기화)
 
 - 학습 데이터: train split만 (751명 × 3조도 = 38,808장). query·gallery는 학습에 전혀 사용하지 않음.
 - 에폭 수는 미리 고정 (테스트 성능으로 고르지 않음). 마지막 에폭 가중치를 그대로 사용.
@@ -151,8 +153,12 @@ def triplet_hard(f, y, margin=0.3):
     return torch.relu(ap - an + margin).mean()
 
 
-def build(num_classes=751):
-    """Market 학습 가중치에서 출발. num_classes > 751(MSMT17 추가)이면 분류기 앞 751행만 Market 값으로 채우고 나머지는 새로 초기화."""
+def build(num_classes=751, arch="osnet_x1_0"):
+    """OSNet: Market 학습 가중치에서 출발. num_classes > 751(MSMT17 추가)이면 분류기 앞 751행만 Market 값으로 채우고 나머지는 새로 초기화.
+    clip_vit_b16: CLIP(openai) 사전학습 이미지 인코더 + 새 BNNeck·분류기."""
+    if arch == "clip_vit_b16":
+        from vastreid.clip_reid import ClipReID
+        return ClipReID(num_classes).to(DEV)
     import torchreid
     m = torchreid.models.build_model("osnet_x1_0", num_classes=num_classes, loss="softmax", pretrained=False)
     sd = torch.load(ROOT / "weights/osnet_x1_0_market1501.pth", map_location="cpu", weights_only=True)
@@ -216,7 +222,7 @@ def train(args):
         ds = TrainDS(items, labels, LEVELS if args.online else None, cfg)
         dl = torch.utils.data.DataLoader(ds, batch_size=args.batch, shuffle=True, num_workers=8, pin_memory=True,
                                          drop_last=True, persistent_workers=True)
-    model = build(n_cls)
+    model = build(n_cls, args.arch)
     if args.pair:
         model.loss = "triplet"  # train 모드에서 (로짓, 특징) 반환
     if args.init:  # 이어서 학습: 이전 미세조정 가중치(분류기 포함)에서 시작
@@ -226,8 +232,9 @@ def train(args):
     n_img = len(dl) * 2 * args.pk_p * args.pk_k if args.pair else len(ds)
     print(f"[ft] {'online ' if args.online else ''}{'pair ' if args.pair else ''}{n_img} imgs/epoch, {n_cls} ids, "
           f"시작 시점 분류 정확도(분류기 매핑 확인용) {acc0*100:.1f}%", flush=True)
-    head = [p for n, p in model.named_parameters() if n.startswith("classifier")]
-    body = [p for n, p in model.named_parameters() if not n.startswith("classifier")]
+    is_head = lambda n: n.startswith(("classifier", "bnneck"))  # noqa: E731
+    head = [p for n, p in model.named_parameters() if is_head(n) and p.requires_grad]
+    body = [p for n, p in model.named_parameters() if not is_head(n) and p.requires_grad]
     opt = torch.optim.AdamW([{"params": body, "lr": args.lr}, {"params": head, "lr": args.lr * 10}],
                             weight_decay=5e-4)
     steps = args.epochs * len(dl)
@@ -333,6 +340,7 @@ def evaluate_all(out_csv, prefix=PREFIX):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--arch", default="osnet_x1_0", choices=["osnet_x1_0", "clip_vit_b16"])
     ap.add_argument("--epochs", type=int, default=12)
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--lr", type=float, default=1e-4)
@@ -358,7 +366,7 @@ def main():
     torch.manual_seed(args.seed)
     if args.extract_only:
         from vastreid.reid import load_model  # 분류기 크기와 무관하게 특징 추출용으로 로드
-        model = load_model("osnet_x1_0", args.out, DEV)
+        model = load_model(args.arch, args.out, DEV)
     else:
         model = train(args)
     if not args.no_extract:

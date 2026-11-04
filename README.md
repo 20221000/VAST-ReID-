@@ -266,6 +266,8 @@ Rank-1 (gallery는 모두 주간)
 | 위 모델 + k-reciprocal + CSLS + 속성 | **91.7** | 82.4 (mAP **79.0**) | | | |
 | **짝 + triplet, extreme 2/3 + 12 에폭 추가 (lr 3e-5, 24 에폭)** | 86.7 | 68.9 (mAP **50.2**) | 51.9 | **60.0** | **51.3 / 32.3**\* |
 | 위 모델 + k-reciprocal + CSLS + 속성 | **91.9** (mAP **88.0**) | **83.3** (mAP **79.5**) | | | |
+| **CLIP ViT-B/16 + 짝 + triplet, extreme 2/3 (12 에폭)** | **92.7** (mAP **82.3**) | **77.2** (mAP **64.3**) | **66.4** | **88.0** | **81.2 / 54.3**\* |
+| 위 모델 + k-reciprocal + CSLS + 속성 | **94.2** (mAP **91.8**) | **84.4** (mAP **84.3**) | | | |
 
 \* MSMT17 train으로 학습했으므로 같은 데이터셋(사람은 겹치지 않음). Market으로만 학습한 모델은 MSMT17에서 밝은 사진도 약 10%로, 데이터셋이 바뀌면 ReID가 크게 무너집니다.
 
@@ -273,6 +275,7 @@ Rank-1 (gallery는 모두 주간)
   같은 학습량(12 에폭)의 기존 방법보다 Normal·Low·MSMT17(밝은 사진 46.6 → 52.0)과 모든 mAP가 좋아졌지만, Extreme Rank-1(67.1 → 66.3)과 처음 보는 노이즈(50.6 → 48.1)는 조금 낮아 데모 기본 모델은 바꾸지 않음.
   짝의 저조도 쪽을 extreme 2/3로 바꿔 전체 극저조도 비율을 기존과 같게 맞추자(`--pair-extreme 0.6667`) Extreme이 68.6으로 회복되고 MSMT17 향상은 유지됨. 같은 12 에폭 기준으로는 기존 방법보다 거의 모든 시험에서 좋고, 24 에폭 최종 모델과는 Extreme Rank-1·처음 보는 노이즈만 조금 낮음.
   같은 방식으로 12 에폭을 더 학습해 **24 에폭끼리 비교**하면(`results/finetune_pair_ext24.csv`, `results/kreciprocal_ftpairext24.csv`) MSMT17(47.0 → 51.3, Extreme 30.8 → 32.3)·색 조명(57.9 → 60.0)·모든 mAP·조합 결과가 기존 최종 모델보다 좋고, 처음 보는 노이즈(53.7 → 51.9)와 Extreme Rank-1(69.2 → 68.9)만 조금 낮음.
+- **더 큰 백본: CLIP ViT-B/16**(`vastreid/clip_reid.py`, `tools/finetune.py --arch clip_vit_b16`, `results/finetune_clip_pair.csv`, `results/kreciprocal_clippair.csv`): OSNet(220만 파라미터) 대신 CLIP 이미지 인코더(8,600만)에 BNNeck·새 분류기를 붙이고, 학습 방법은 짝 + triplet, extreme 2/3 그대로 12 에폭(lr 2e-5, 37분). 모든 시험에서 OSNet 최고 기록을 크게 넘음: Extreme 69.2 → 77.2(mAP 50.2 → 64.3), 처음 보는 노이즈 53.7 → 66.4, 색 조명 60.0 → 88.0, MSMT17 Normal 51.3 → 81.2·Extreme 32.3 → 54.3. 대규모 사진·문장 사전학습 덕분에 처음 보는 조건에 특히 강함. 대신 학습 1.6배·추론 비용이 커서 데모 기본 모델은 아직 바꾸지 않음.
 - 12 에폭 추가 학습(이전 가중치에서 이어서, 학습률 1/3)은 다섯 시험 모두에서 소폭 개선 → 덜 학습된 상태였음. 테스트 하나에 맞춘 개선이 아님을 확인하려고 모든 시험을 함께 봄.
 - Market 점수만 보면 Market만 학습한 모델이 낫지만, **처음 보는 조건에서는 최종 모델이 훨씬 강합니다**(특히 색 조명 +20). 데모 기본 백본은 최종 모델입니다.
 - MSMT17은 Kaggle 비공식 사본(`ouassimaazzouzi/msmt17`, 126,441장으로 공식 수치와 일치)을 사용했습니다. 공식 배포는 동의서 신청 방식입니다.
@@ -389,6 +392,11 @@ python tools/hubness.py $P --feat adabn $G --out results/hubness_ftmsmt24_adabn.
 python tools/kreciprocal.py $P --hub-none results/hubness_ftmsmt24.csv \
     --hub-adabn results/hubness_ftmsmt24_adabn.csv --out results/kreciprocal_ftmsmt24.csv
 python tools/build_demo_cache.py --prefix osnet_x1_0-ftmsmt24
+python tools/finetune.py --arch clip_vit_b16 --online --msmt --pair --pair-extreme 0.6667 --lr 2e-5 \n    --prefix clip_vit_b16-ftpair --out weights/clip_vit_b16_vast_lowlight_ft_pair.pth \n    --csv results/finetune_clip_pair.csv                    # 더 큰 백본 (약 40분)
+P="--attr-probe probe-clip+osnet-ft --prefix clip_vit_b16-ftpair"
+python tools/hubness.py $P --feat none  $G --out results/hubness_clippair.csv
+python tools/hubness.py $P --feat adabn $G --out results/hubness_clippair_adabn.csv
+python tools/kreciprocal.py $P --hub-none results/hubness_clippair.csv \n    --hub-adabn results/hubness_clippair_adabn.csv --out results/kreciprocal_clippair.csv
 python tools/eval_shift.py && python tools/eval_msmt.py   # 일반화 시험
 python tools/synthesize_lowlight.py --mode mot --src data/raw/mot17/MOT17/train --out data/vast_mot \
     --sequences MOT17-02-FRCNN MOT17-04-FRCNN MOT17-09-FRCNN

@@ -22,9 +22,20 @@ def gpu_temp() -> str:
         return "?"
 
 
-def load_model(name: str, weights: Path, device: str):
-    import torchreid
-    model = torchreid.models.build_model(name=name, num_classes=1, pretrained=False)
+def arch_of(weights) -> str:
+    """가중치 파일 이름으로 백본 구조 추정 (clip_vit_b16_*.pth → CLIP ViT-B/16, 나머지 OSNet)."""
+    return "clip_vit_b16" if Path(weights).name.startswith("clip_vit_b16") else "osnet_x1_0"
+
+
+def load_model(name: str | None, weights: Path, device: str):
+    """name=None이면 arch_of(weights)."""
+    name = name or arch_of(weights)
+    if name == "clip_vit_b16":
+        from vastreid.clip_reid import ClipReID
+        model = ClipReID(num_classes=1, pretrained=False)
+    else:
+        import torchreid
+        model = torchreid.models.build_model(name=name, num_classes=1, pretrained=False)
     sd = torch.load(weights, map_location="cpu", weights_only=True)
     sd = sd.get("state_dict", sd)
     sd = {k.removeprefix("module."): v for k, v in sd.items() if not k.removeprefix("module.").startswith("classifier.")}

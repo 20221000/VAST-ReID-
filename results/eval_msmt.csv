@@ -23,3 +23,6 @@ model,query_level,gallery_level,rank1,rank5,mAP,mINP,num_valid_query
 "짝 + triplet, extreme 2/3 (24 에폭)*",normal,normal,0.513252,0.685565,0.25475,0.022818,11659
 "짝 + triplet, extreme 2/3 (24 에폭)*",low,normal,0.475084,0.640793,0.231406,0.020231,11659
 "짝 + triplet, extreme 2/3 (24 에폭)*",extreme,normal,0.323012,0.485719,0.15281,0.013048,11659
+CLIP ViT-B/16 짝 + triplet (12 에폭)*,normal,normal,0.811819,0.902908,0.599041,0.175776,11659
+CLIP ViT-B/16 짝 + triplet (12 에폭)*,low,normal,0.744747,0.849901,0.53345,0.149443,11659
+CLIP ViT-B/16 짝 + triplet (12 에폭)*,extreme,normal,0.543186,0.673557,0.372366,0.093414,11659
