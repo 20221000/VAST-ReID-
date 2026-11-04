@@ -869,3 +869,10 @@
 - 조합 이득은 줄어듦(Extreme +7.2, OSNet은 +14.4): 백본 특징이 이미 좋아 재순위화가 고칠 여지가 적음. 조합 하이퍼파라미터는 train 검증 분할로만 고름(기존과 같음).
 - AdaBN은 거의 효과 없음(ViT는 LayerNorm이라 BN이 BNNeck 하나뿐).
 - 남은 일: 데모 기본 백본 교체 여부(추론 비용 증가), 24 에폭 이어 학습, 속성 분류기를 CLIP-ReID 특징으로 다시 학습.
+
+### 데모 기본 백본을 CLIP ViT-B/16으로 교체
+- 사용자 결정: OSNet은 한계가 있어 데모 기본을 CLIP ViT-B/16(`clip_vit_b16-ftpair`)으로 교체. 백본 선택에 OSNet 3종(최종 Market + MSMT17, Market만, 사전학습)은 그대로 남김.
+- `vastreid/demo_core.py`: `CLIP` 백본·`DEFAULT_BACKBONE = "clip"` 추가, CSLS·재순위화 파라미터는 `results/hubness_clippair*.csv`, `results/kreciprocal_clippair.csv`(train 검증 분할에서 고른 값). 갤러리 속성 분류기는 기존 결합 분류기(probe-clip+osnet-ft) 그대로.
+- 캐시: `tools/build_demo_cache.py --prefix clip_vit_b16-ftpair`(샘플 k-reciprocal), `tools/failure_analysis.py`(CLIP+CSLS 행 추가), `tools/build_demo_msmt.py`(CLIP MSMT17 특징 + Market 전체 쿼리 k-reciprocal, 이미 만든 백본은 건너뜀). 전체 10분 30초.
+- 실패 원인(CLIP+CSLS, Rank-1 오답): Extreme 819/3,368건(OSNet보다 적음), hub 0% — CSLS 뒤에는 hub가 사라지고 남은 오답은 외형이 비슷한 사람·기타.
+- 데모 벤치마크 표·카드도 CLIP 결과 기준(조합 Low 94.2, Extreme 84.4).

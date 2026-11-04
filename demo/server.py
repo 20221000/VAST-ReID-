@@ -68,7 +68,7 @@ def samples(level: str = "low", seed: int | None = Query(None, ge=0, le=2**31)):
 def search(q_level: str = "low", sample: int | None = None, g_level: str = "normal", adabn: bool = True,
            csls: bool = True, kr: bool = False, beta: float = 1.0, lam: float = 0.5, src_level: str | None = None,
            src_gallery: int | None = None, upper_color: str = "", lower_color: str = "", sleeve: str = "",
-           lower_type: str = "", bag: str = "", hat: str = "", backbone: str = "ftm",
+           lower_type: str = "", bag: str = "", hat: str = "", backbone: str = core.DEFAULT_BACKBONE,
            ds: str = "market", qidx: int | None = None,
            attr_strength: str = "auto"):
     if ds not in ("market", "msmt"):
@@ -84,7 +84,7 @@ def search(q_level: str = "low", sample: int | None = None, g_level: str = "norm
     attrs = {"upper_color": upper_color, "lower_color": lower_color, "sleeve": sleeve,
              "lower_type": lower_type, "bag": bag, "hat": hat}
     return core.search(_level(q_level), sample, _level(g_level), adabn, csls, beta, lam, attrs,
-                       _level(src_level) if src_level else None, src_gallery, kr, backbone if backbone in core.BACKBONES else "ftm",
+                       _level(src_level) if src_level else None, src_gallery, kr, backbone if backbone in core.BACKBONES else core.DEFAULT_BACKBONE,
                        attr_strength if attr_strength in ("auto", "strong", "max") else "auto", ds, qidx)
 
 

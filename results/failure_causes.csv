@@ -47,3 +47,15 @@ FTM+CSLS,extreme,normal,distractor,156,0.1465,1065,3368,33
 FTM+CSLS,extreme,normal,hub,0,0.0,1065,3368,33
 FTM+CSLS,extreme,normal,similar,150,0.1408,1065,3368,33
 FTM+CSLS,extreme,normal,other,759,0.7127,1065,3368,33
+CLIP+CSLS,normal,normal,distractor,42,0.1963,214,3368,33
+CLIP+CSLS,normal,normal,hub,0,0.0,214,3368,33
+CLIP+CSLS,normal,normal,similar,78,0.3645,214,3368,33
+CLIP+CSLS,normal,normal,other,94,0.4393,214,3368,33
+CLIP+CSLS,low,normal,distractor,59,0.2092,282,3368,33
+CLIP+CSLS,low,normal,hub,0,0.0,282,3368,33
+CLIP+CSLS,low,normal,similar,84,0.2979,282,3368,33
+CLIP+CSLS,low,normal,other,139,0.4929,282,3368,33
+CLIP+CSLS,extreme,normal,distractor,196,0.2393,819,3368,33
+CLIP+CSLS,extreme,normal,hub,0,0.0,819,3368,33
+CLIP+CSLS,extreme,normal,similar,141,0.1722,819,3368,33
+CLIP+CSLS,extreme,normal,other,482,0.5885,819,3368,33

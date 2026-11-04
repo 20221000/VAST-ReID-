@@ -28,13 +28,17 @@ VALUE_KO = {"black": "검정", "white": "흰색", "red": "빨강", "purple": "�
 PERSONS = {int(k): v for k, v in json.loads(
     (ROOT / "annotations/person_attributes.json").read_text(encoding="utf-8"))["persons"].items()}
 N_SAMPLES = 24
-BASE, FT, FTM = "osnet_x1_0", "osnet_x1_0-ft", "osnet_x1_0-ftmsmt24"  # 특징 캐시 이름 (최종: 12 + 12 에폭)
-# 백본: base 사전학습 / ft Market 저조도 미세조정 / ftm Market + MSMT17 온라인 합성 미세조정(최종, 데모 기본)
-BACKBONES = {"base": BASE, "ft": FT, "ftm": FTM}
-BACKBONE_LABEL = {"base": "사전학습 OSNet", "ft": "미세조정 OSNet (Market)", "ftm": "최종 OSNet (Market + MSMT17)"}
+BASE, FT, FTM = "osnet_x1_0", "osnet_x1_0-ft", "osnet_x1_0-ftmsmt24"  # 특징 캐시 이름 (OSNet 최종: 12 + 12 에폭)
+CLIP = "clip_vit_b16-ftpair"  # CLIP ViT-B/16 + 짝 + triplet (tools/finetune.py --arch clip_vit_b16)
+# 백본: clip CLIP ViT-B/16(최종, 데모 기본) / ftm OSNet Market + MSMT17 / ft OSNet Market 저조도 미세조정 / base 사전학습
+BACKBONES = {"clip": CLIP, "base": BASE, "ft": FT, "ftm": FTM}
+DEFAULT_BACKBONE = "clip"
+BACKBONE_LABEL = {"clip": "최종 CLIP ViT-B/16 (Market + MSMT17)", "base": "사전학습 OSNet", "ft": "미세조정 OSNet (Market)",
+                  "ftm": "OSNet (Market + MSMT17)"}
+TRAINED_MSMT = (FTM, CLIP)  # MSMT17 train으로도 학습한 백본
 ATTR_STRENGTH = {"strong": 0.3, "max": 0.9}
 # 갤러리 속성 예측: 미세조정 백본은 CLIP + 미세조정 OSNet 특징 결합 분류기 (tools/attr_probe.py --src clip+osnet-ft)
-ATTR_PROBE = {BASE: "probe", FT: "probe-clip+osnet-ft", FTM: "probe-clip+osnet-ft"}  # λ (속성 하나당 가중치 = λ/6 → 0.05, 0.15)
+ATTR_PROBE = {BASE: "probe", FT: "probe-clip+osnet-ft", FTM: "probe-clip+osnet-ft", CLIP: "probe-clip+osnet-ft"}  # λ (속성 하나당 가중치 = λ/6 → 0.05, 0.15)
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -144,7 +148,7 @@ def msmt_items(split: str):
 @lru_cache(maxsize=1)
 def msmt_ready() -> bool:
     """tools/build_demo_msmt.py 캐시가 있어야 MSMT17 샘플을 보여줌."""
-    return bool(msmt_items("query")) and (ROOT / f"outputs/features/msmt__{FTM}__normal__gallery.pt").exists()
+    return bool(msmt_items("query")) and (ROOT / f"outputs/features/msmt__{BACKBONES[DEFAULT_BACKBONE]}__normal__gallery.pt").exists()
 
 
 @lru_cache(maxsize=1)
@@ -187,17 +191,17 @@ def _query_lum(p: Path) -> float:
     return round(float(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).mean() / 255), 3) if img is not None else None
 
 
-def msmt_search(q_level: str, qidx: int, backbone: str = "ftm", csls: bool = True, adabn: bool = False,
+def msmt_search(q_level: str, qidx: int, backbone: str = DEFAULT_BACKBONE, csls: bool = True, adabn: bool = False,
                 kr: bool = False, attrs: dict | None = None) -> dict:
     """MSMT17 query → MSMT17 주간 gallery(82,161장). 특징은 tools/build_demo_msmt.py가 미리 추출."""
-    pf = BACKBONES.get(backbone, FTM)
+    pf = BACKBONES.get(backbone, BACKBONES[DEFAULT_BACKBONE])
     qi, gi = msmt_items("query"), msmt_items("gallery")
     q = qi[qidx]
     gf, qf = msmt_feats(pf, "normal", "gallery"), msmt_feats(pf, q_level, "query")[qidx]
     cos = gf @ qf
     score, notes = cos.copy(), []
-    if pf == FTM:
-        notes.append("최종 모델은 MSMT17 train(검색 대상과 다른 인물)으로도 학습했습니다")
+    if pf in TRAINED_MSMT:
+        notes.append("이 백본은 MSMT17 train(검색 대상과 다른 인물)으로도 학습했습니다")
     if csls:
         cp = csls_params(q_level, "normal", "none", pf) or {"k": 50, "beta": 1.0}
         score = score - cp["beta"] * msmt_hub(pf, q_level, cp["k"])
@@ -230,7 +234,7 @@ def msmt_search(q_level: str, qidx: int, backbone: str = "ftm", csls: bool = Tru
         "dataset": "MSMT17", "gallery_size": len(gi), "g_level": "Normal",
         "rank1": bool(res and res[0]["ok"]), "ap": None if ap is None else round(ap, 3),
         "first_correct": int(ranks[0]) + 1 if len(ranks) else None, "results": res, "kr": False,
-        "kr_note": " · ".join(notes) or None, "backbone": BACKBONE_LABEL.get(backbone, BACKBONE_LABEL["ftm"]),
+        "kr_note": " · ".join(notes) or None, "backbone": BACKBONE_LABEL.get(backbone, BACKBONE_LABEL[DEFAULT_BACKBONE]),
         "attr_weight": 0.0, "attr_strength": "auto",
     }
 
@@ -252,8 +256,10 @@ def _agreement(choices: dict, gp: dict) -> np.ndarray | None:
 
 _HUB_CSV = {(BASE, "none"): "hubness_wide.csv", (BASE, "adabn"): "hubness_adabn.csv",
             (FT, "none"): "hubness_ft_pft.csv", (FT, "adabn"): "hubness_ft_adabn_pft.csv",
-            (FTM, "none"): "hubness_ftmsmt24.csv", (FTM, "adabn"): "hubness_ftmsmt24_adabn.csv"}
-_KR_CSV = {BASE: "kreciprocal.csv", FT: "kreciprocal_ft_pft.csv", FTM: "kreciprocal_ftmsmt24.csv"}
+            (FTM, "none"): "hubness_ftmsmt24.csv", (FTM, "adabn"): "hubness_ftmsmt24_adabn.csv",
+            (CLIP, "none"): "hubness_clippair.csv", (CLIP, "adabn"): "hubness_clippair_adabn.csv"}
+_KR_CSV = {BASE: "kreciprocal.csv", FT: "kreciprocal_ft_pft.csv", FTM: "kreciprocal_ftmsmt24.csv",
+           CLIP: "kreciprocal_clippair.csv"}
 
 
 @lru_cache(maxsize=None)
@@ -332,11 +338,11 @@ def kr_params(q_level: str, feat: str, prefix: str = BASE) -> dict | None:
 def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: bool = True, csls: bool = True,
            beta: float = 1.0, lam: float = 0.5, attrs: dict | None = None,
            src_level: str | None = None, src_gallery: int | None = None, kr: bool = False,
-           backbone: str = "ftm", attr_strength: str = "auto", ds: str = "market", qidx: int | None = None) -> dict:
+           backbone: str = DEFAULT_BACKBONE, attr_strength: str = "auto", ds: str = "market", qidx: int | None = None) -> dict:
     if ds == "msmt" and src_gallery is None:
         return msmt_search(q_level, qidx, backbone, csls, adabn, kr, attrs)
     feat = "adabn" if adabn else "none"
-    pf = BACKBONES.get(backbone, FTM)
+    pf = BACKBONES.get(backbone, BACKBONES[DEFAULT_BACKBONE])
     gi, gf = items(g_level, "gallery"), feats(g_level, "gallery", feat, pf)
     if src_gallery is not None:  # 텍스트 검색 결과를 query로 재검색
         lv = src_level or g_level
@@ -400,7 +406,7 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
         "rank1": bool(res and res[0]["ok"]), "ap": None if ap is None else round(ap, 3),
         "first_correct": ranks[0] if ranks else None, "results": res, "kr": kr_used, "kr_note": kr_note,
         "dataset": "Market-1501",
-        "backbone": BACKBONE_LABEL.get(backbone, BACKBONE_LABEL["ftm"]), "attr_weight": round(lam / len(ATTR_VALUES), 3), "attr_strength": attr_strength,
+        "backbone": BACKBONE_LABEL.get(backbone, BACKBONE_LABEL[DEFAULT_BACKBONE]), "attr_weight": round(lam / len(ATTR_VALUES), 3), "attr_strength": attr_strength,
     }
 
 
@@ -503,7 +509,8 @@ def bench() -> dict:
     base, wide, ada = _csv("baseline.csv"), _csv("hubness_wide.csv"), _csv("hubness_adabn.csv")
     enh2, krc = _csv("enhance_v2.csv"), _csv("kreciprocal.csv")
     ft, krf = _csv("finetune.csv"), _csv("kreciprocal_ft_pft.csv")  # Market만 미세조정 (결합 속성 분류기)
-    ftm, krm = _csv("finetune_msmt24.csv"), _csv("kreciprocal_ftmsmt24.csv")  # 최종 모델 (Market + MSMT17, 24 에폭)
+    ftm, krm = _csv("finetune_msmt24.csv"), _csv("kreciprocal_ftmsmt24.csv")  # OSNet 최종 (Market + MSMT17, 24 에폭)
+    ftc, krcl = _csv("finetune_clip_pair.csv"), _csv("kreciprocal_clippair.csv")  # 최종 모델 (CLIP ViT-B/16)
 
     def triple(rows, method, extra=None):
         out = {}
@@ -539,11 +546,17 @@ def bench() -> dict:
         rows.append({"name": "미세조정 + CSLS + 재순위화 + 목격자 속성",
                      **triple(krf, "kr+csls+witness-probe", {"feat": "none"}), "note": "AdaBN 없음"})
     if ftm:
-        rows.append({"name": "최종 모델 (Market + MSMT17 미세조정)", **triple(ftm, "cosine", {"feat": "none"}),
-                     "note": "온라인 합성 24 에폭 · 처음 보는 조명에 강함"})
+        rows.append({"name": "OSNet 미세조정 (Market + MSMT17)", **triple(ftm, "cosine", {"feat": "none"}),
+                     "note": "온라인 합성 24 에폭"})
     if krm:
+        rows.append({"name": "OSNet 미세조정 + CSLS + 재순위화 + 목격자 속성",
+                     **triple(krm, "kr+csls+witness-probe", {"feat": "none"})})
+    if ftc:
+        rows.append({"name": "최종 모델 (CLIP ViT-B/16 미세조정)", **triple(ftc, "cosine", {"feat": "none"}),
+                     "note": "짝 일관성 + triplet 12 에폭 · 처음 보는 조명에 강함"})
+    if krcl:
         rows.append({"name": "최종 모델 + CSLS + 재순위화 + 목격자 속성",
-                     **triple(krm, "kr+csls+witness-probe", {"feat": "none"}), "note": "데모 기본"})
+                     **triple(krcl, "kr+csls+witness-probe", {"feat": "none"}), "note": "데모 기본"})
     b_n = _pick(base, protocol="same", query_level="normal")
     b_e = _pick(base, protocol="cross", query_level="extreme")
     z_l = _pick(enh2, enhance="zerodce", denoise="none", protocol="cross", query_level="low")
@@ -555,7 +568,7 @@ def bench() -> dict:
         if cand and (not best or float(cand["rank1"]) > float(best["rank1"])):
             best = cand
     c_e = _pick(wide, method="cosine", protocol="cross", query_level="extreme")
-    final = krm or krf  # 카드는 데모 기본(최종 모델) 기준
+    final = krcl or krm or krf  # 카드는 데모 기본(최종 모델) 기준
     best_e = _pick(final, feat="none", method="kr+csls+witness-probe", protocol="cross", query_level="extreme")
     best = _pick(final, feat="none", method="kr+csls+witness-probe", protocol="cross", query_level="low") or best
     cards = {

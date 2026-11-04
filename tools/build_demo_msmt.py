@@ -31,7 +31,8 @@ from vastreid.reid import extract, gpu_temp, load_model  # noqa: E402
 
 DEV = "cuda"
 WEIGHTS = {core.BASE: "weights/osnet_x1_0_market1501.pth", core.FT: "weights/osnet_x1_0_vast_lowlight_ft.pth",
-           core.FTM: "weights/osnet_x1_0_vast_lowlight_ft_online_msmt_24.pth"}
+           core.FTM: "weights/osnet_x1_0_vast_lowlight_ft_online_msmt_24.pth",
+           core.CLIP: "weights/clip_vit_b16_vast_lowlight_ft_pair.pth"}
 N_REF = 3000
 
 
@@ -63,22 +64,29 @@ def main():
     print(f"  [synth] {time.time() - t0:.0f}s", flush=True)
     cache = ROOT / "outputs/features"
     for pf, w in WEIGHTS.items():
-        m = load_model("osnet_x1_0", ROOT / w, DEV)
+        if all((cache / f"msmt__{pf}__{lv}__{sp}.pt").exists() for lv, sp in paths):  # 이미 만든 백본은 건너뜀
+            continue
+        m = load_model(None, ROOT / w, DEV)
         for (lv, sp), ps in paths.items():
             f, _ = extract(m, ps, DEV)
             torch.save({"n": len(ps), "feats": f.half().cpu()}, cache / f"msmt__{pf}__{lv}__{sp}.pt")
         print(f"  [msmt feat] {pf} {time.time() - t0:.0f}s GPU {gpu_temp()}°C", flush=True)
         del m
         torch.cuda.empty_cache()
-    # Market 최종 모델 전체 쿼리 k-reciprocal
-    gf = torch.from_numpy(core.feats("normal", "gallery", "none", core.FTM)).to(DEV)
-    gg = (1 - gf @ gf.T).cpu().numpy()
-    for lv in core.LEVELS:
-        qf = torch.from_numpy(core.feats(lv, "query", "none", core.FTM)).to(DEV)
-        t = time.time()
-        d = re_ranking((1 - qf @ gf.T).cpu().numpy(), (1 - qf @ qf.T).cpu().numpy(), gg, k1=20, k2=6, lambda_value=0.3)
-        np.save(ROOT / f"outputs/demo/krfull__{core.FTM}__{lv}__none.npy", d.astype(np.float16))
-        print(f"  [krfull] {lv} {d.shape} {time.time() - t:.0f}s GPU {gpu_temp()}°C", flush=True)
+    # Market 최종 모델(OSNet, CLIP) 전체 쿼리 k-reciprocal
+    for pf in core.TRAINED_MSMT:
+        gf = torch.from_numpy(core.feats("normal", "gallery", "none", pf)).to(DEV)
+        gg = (1 - gf @ gf.T).cpu().numpy()
+        for lv in core.LEVELS:
+            out = ROOT / f"outputs/demo/krfull__{pf}__{lv}__none.npy"
+            if out.exists():
+                continue
+            qf = torch.from_numpy(core.feats(lv, "query", "none", pf)).to(DEV)
+            t = time.time()
+            d = re_ranking((1 - qf @ gf.T).cpu().numpy(), (1 - qf @ qf.T).cpu().numpy(), gg, k1=20, k2=6,
+                           lambda_value=0.3)
+            np.save(out, d.astype(np.float16))
+            print(f"  [krfull] {pf} {lv} {d.shape} {time.time() - t:.0f}s GPU {gpu_temp()}°C", flush=True)
     print(f"[done] {time.time() - t0:.0f}s")
 
 

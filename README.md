@@ -275,9 +275,9 @@ Rank-1 (gallery는 모두 주간)
   같은 학습량(12 에폭)의 기존 방법보다 Normal·Low·MSMT17(밝은 사진 46.6 → 52.0)과 모든 mAP가 좋아졌지만, Extreme Rank-1(67.1 → 66.3)과 처음 보는 노이즈(50.6 → 48.1)는 조금 낮아 데모 기본 모델은 바꾸지 않음.
   짝의 저조도 쪽을 extreme 2/3로 바꿔 전체 극저조도 비율을 기존과 같게 맞추자(`--pair-extreme 0.6667`) Extreme이 68.6으로 회복되고 MSMT17 향상은 유지됨. 같은 12 에폭 기준으로는 기존 방법보다 거의 모든 시험에서 좋고, 24 에폭 최종 모델과는 Extreme Rank-1·처음 보는 노이즈만 조금 낮음.
   같은 방식으로 12 에폭을 더 학습해 **24 에폭끼리 비교**하면(`results/finetune_pair_ext24.csv`, `results/kreciprocal_ftpairext24.csv`) MSMT17(47.0 → 51.3, Extreme 30.8 → 32.3)·색 조명(57.9 → 60.0)·모든 mAP·조합 결과가 기존 최종 모델보다 좋고, 처음 보는 노이즈(53.7 → 51.9)와 Extreme Rank-1(69.2 → 68.9)만 조금 낮음.
-- **더 큰 백본: CLIP ViT-B/16**(`vastreid/clip_reid.py`, `tools/finetune.py --arch clip_vit_b16`, `results/finetune_clip_pair.csv`, `results/kreciprocal_clippair.csv`): OSNet(220만 파라미터) 대신 CLIP 이미지 인코더(8,600만)에 BNNeck·새 분류기를 붙이고, 학습 방법은 짝 + triplet, extreme 2/3 그대로 12 에폭(lr 2e-5, 37분). 모든 시험에서 OSNet 최고 기록을 크게 넘음: Extreme 69.2 → 77.2(mAP 50.2 → 64.3), 처음 보는 노이즈 53.7 → 66.4, 색 조명 60.0 → 88.0, MSMT17 Normal 51.3 → 81.2·Extreme 32.3 → 54.3. 대규모 사진·문장 사전학습 덕분에 처음 보는 조건에 특히 강함. 대신 학습 1.6배·추론 비용이 커서 데모 기본 모델은 아직 바꾸지 않음.
+- **더 큰 백본: CLIP ViT-B/16**(`vastreid/clip_reid.py`, `tools/finetune.py --arch clip_vit_b16`, `results/finetune_clip_pair.csv`, `results/kreciprocal_clippair.csv`): OSNet(220만 파라미터) 대신 CLIP 이미지 인코더(8,600만)에 BNNeck·새 분류기를 붙이고, 학습 방법은 짝 + triplet, extreme 2/3 그대로 12 에폭(lr 2e-5, 37분). 모든 시험에서 OSNet 최고 기록을 크게 넘음: Extreme 69.2 → 77.2(mAP 50.2 → 64.3), 처음 보는 노이즈 53.7 → 66.4, 색 조명 60.0 → 88.0, MSMT17 Normal 51.3 → 81.2·Extreme 32.3 → 54.3. 대규모 사진·문장 사전학습 덕분에 처음 보는 조건에 특히 강함. 학습 1.6배·추론 비용이 크지만 일반화 차이가 커서 **데모 기본 백본으로 교체**(OSNet 백본도 계속 선택 가능).
 - 12 에폭 추가 학습(이전 가중치에서 이어서, 학습률 1/3)은 다섯 시험 모두에서 소폭 개선 → 덜 학습된 상태였음. 테스트 하나에 맞춘 개선이 아님을 확인하려고 모든 시험을 함께 봄.
-- Market 점수만 보면 Market만 학습한 모델이 낫지만, **처음 보는 조건에서는 최종 모델이 훨씬 강합니다**(특히 색 조명 +20). 데모 기본 백본은 최종 모델입니다.
+- Market 점수만 보면 Market만 학습한 모델이 낫지만, **처음 보는 조건에서는 최종 모델이 훨씬 강합니다**(특히 색 조명 +20). OSNet 중에서는 이 모델이 가장 일반화가 좋았고, 지금 데모 기본은 아래 CLIP ViT-B/16 모델입니다.
 - MSMT17은 Kaggle 비공식 사본(`ouassimaazzouzi/msmt17`, 126,441장으로 공식 수치와 일치)을 사용했습니다. 공식 배포는 동의서 신청 방식입니다.
 
 ### 저조도 미세조정 (`results/finetune.csv`, `results/kreciprocal_ft.csv`)
@@ -316,7 +316,7 @@ Rank-1 (gallery는 모두 주간)
    오답 카드는 실제 실패 원인(사람이 아닌 이미지, hub 이미지, 유사 의복, 조도)과 **AI 오답 설명**(비전 LLM, 로컬 전용)을 보여줍니다.
    샘플 24개 기준 Extreme Rank-1: 사전학습 최고 조합 10/24 → 미세조정 조합 16/24.
    **이미지 변경**을 누를 때마다 Market-1501 12명 + MSMT17 12명을 무작위로 뽑습니다. MSMT17 인물은 MSMT17 주간 갤러리(82,161장)에서 찾습니다
-   (`tools/build_demo_msmt.py`로 특징을 미리 추출, 재순위화는 Market 최종 모델만 전체 쿼리에 미리 계산).
+   (`tools/build_demo_msmt.py`로 특징을 미리 추출, 재순위화는 Market의 MSMT17 학습 백본(CLIP, OSNet)만 전체 쿼리에 미리 계산).
    예: 샘플 #0 극저조도 쿼리의 정답 순위 2,548위 → AdaBN + CSLS 적용 시 1위.
 2. **텍스트 검색**: 인상착의 문장 → 속성 추출(키워드 규칙, 로컬에서는 LLM 선택 가능) → 속성 일치 순 검색, 선택한 인물의 **AI 시맨틱 캡션**, 그 인물로 이미지 재검색.
 3. **벤치마크**: `results/*.csv`의 실제 값으로 핵심 지표, 방법 × 조도 막대그래프, 실패 원인 분포, 저조도 MOT17 트래킹 프레임과 지표를 표시합니다.
@@ -400,6 +400,8 @@ python tools/hubness.py $P --feat none  $G --out results/hubness_clippair.csv
 python tools/hubness.py $P --feat adabn $G --out results/hubness_clippair_adabn.csv
 python tools/kreciprocal.py $P --hub-none results/hubness_clippair.csv \
     --hub-adabn results/hubness_clippair_adabn.csv --out results/kreciprocal_clippair.csv
+python tools/build_demo_cache.py --prefix clip_vit_b16-ftpair   # 데모 기본 백본 캐시
+python tools/failure_analysis.py && python tools/build_demo_msmt.py   # 이미 만든 백본은 건너뜀
 python tools/eval_shift.py && python tools/eval_msmt.py   # 일반화 시험
 python tools/synthesize_lowlight.py --mode mot --src data/raw/mot17/MOT17/train --out data/vast_mot \
     --sequences MOT17-02-FRCNN MOT17-04-FRCNN MOT17-09-FRCNN
