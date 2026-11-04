@@ -463,4 +463,4 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
   1. CLIP 24 에폭: `finetune.py --arch clip_vit_b16 --online --msmt --pair --pair-extreme 0.6667 --init weights/clip_vit_b16_vast_lowlight_ft_pair.pth --lr 7e-6 --prefix clip_vit_b16-ftpair24 --out weights/clip_vit_b16_vast_lowlight_ft_pair_24.pth --csv results/finetune_clip_pair24.csv` (약 40분)
   2. Night600 train 추가: 위와 같은 설정에 `--night --no-extract --out weights/clip_vit_b16_vast_lowlight_ft_night.pth` (약 50분) → `--extract-only --prefix clip_vit_b16-ftnight --csv results/finetune_clip_night.csv`
   3. 새 모델 3개(noise, pair24, night) 일반화 비교: `eval_shift.py`, `eval_msmt.py`, `eval_night.py`(모델 등록 완료)
-- 새 가중치(noise 등)는 아직 Release에 없음 → 필요하면 `gh release upload weights-v1 ...`.
+- 노이즈 다양화 가중치는 Release `weights-v1`에 추가함(11/4). 새 가중치도 같은 Release에 `gh release upload weights-v1 <파일>`로 추가.
