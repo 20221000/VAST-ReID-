@@ -442,3 +442,16 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - `.venv`: uv Python 3.12, torch 2.11.0+cu128, 나머지는 WSL `uv pip freeze`와 같은 버전으로 고정. torchreid·TrackEval은 WSL과 같은 커밋.
   torchreid 빌드 전에 tensorboard 필요(`--no-build-isolation`), Cython 평가 확장도 빌드됨. 실행은 `.venv\Scripts\python.exe ...`.
 - 주의: `tools/finetune.py`는 `num_workers=8` → Windows는 프로세스 spawn 방식이라 첫 에폭 시작이 느릴 수 있음(재학습 시 확인).
+
+### 짝 학습 · CLIP 백본 · 가중치 배포 (11/3~11/4)
+- 짝 일관성 + triplet + PK(`tools/finetune.py --pair --pair-extreme 0.6667`): `osnet_x1_0_vast_lowlight_ft_pair_ext(_24).pth`, `results/{finetune_pair_ext24,kreciprocal_ftpairext24}.csv`. 24 에폭 조합 Extreme 83.3 / 79.5, Low 91.9 / 88.0.
+- **CLIP ViT-B/16 백본**(`vastreid/clip_reid.py`, `--arch clip_vit_b16 --lr 2e-5`, 12 에폭 37분): `weights/clip_vit_b16_vast_lowlight_ft_pair.pth`, 특징 `clip_vit_b16-ftpair`,
+  `results/{finetune_clip_pair,hubness_clippair*,kreciprocal_clippair}.csv`. 모든 시험 최고: Extreme 77.2 / 64.3(조합 84.4 / 84.3), Low 조합 94.2 / 91.8, 처음 보는 노이즈 66.4, 색 조명 88.0, MSMT17 81.2 / 54.3(Extreme).
+- `vastreid.reid.load_model(None, path)`: 파일 이름이 `clip_vit_b16`로 시작하면 CLIP 구조로 로드. `eval_shift.py`·`eval_msmt.py`·`build_demo_msmt.py`가 이 방식 사용.
+- **데모 기본 백본 = CLIP**(`demo_core.DEFAULT_BACKBONE = "clip"`, `backbone=clip|ftm|ft|base`). 캐시: `build_demo_cache.py --prefix clip_vit_b16-ftpair`, `failure_analysis.py`(CLIP+CSLS), `build_demo_msmt.py`(이미 있는 백본은 건너뜀).
+- 학습 가중치 8개는 GitHub Release `weights-v1`에 첨부(`gh release download weights-v1 -R 20221000/VAST-ReID- -D weights`). gh는 winget으로 설치, 계정 20221000 로그인.
+
+### 다음 세션 시작점 (11/4)
+- 현재 최고: CLIP ViT-B/16(`clip_vit_b16-ftpair`) + k-reciprocal + CSLS + 속성, Extreme 84.4 / 84.3, Low 94.2 / 91.8. 데모 기본.
+- 다음 후보: ① 속성 분류기를 CLIP-ReID 특징으로 재학습 ② CLIP 24 에폭 ③ 앙상블·TTA ④ CLIP → OSNet 증류(공개 데모용) ⑤ HF Space 반영(무료 CPU라 ViT 추론 속도 확인 필요).
+- 보류: 발표 자료(11/18), NightReID 동의서.
