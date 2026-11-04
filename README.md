@@ -392,11 +392,14 @@ python tools/hubness.py $P --feat adabn $G --out results/hubness_ftmsmt24_adabn.
 python tools/kreciprocal.py $P --hub-none results/hubness_ftmsmt24.csv \
     --hub-adabn results/hubness_ftmsmt24_adabn.csv --out results/kreciprocal_ftmsmt24.csv
 python tools/build_demo_cache.py --prefix osnet_x1_0-ftmsmt24
-python tools/finetune.py --arch clip_vit_b16 --online --msmt --pair --pair-extreme 0.6667 --lr 2e-5 \n    --prefix clip_vit_b16-ftpair --out weights/clip_vit_b16_vast_lowlight_ft_pair.pth \n    --csv results/finetune_clip_pair.csv                    # 더 큰 백본 (약 40분)
+python tools/finetune.py --arch clip_vit_b16 --online --msmt --pair --pair-extreme 0.6667 --lr 2e-5 \
+    --prefix clip_vit_b16-ftpair --out weights/clip_vit_b16_vast_lowlight_ft_pair.pth \
+    --csv results/finetune_clip_pair.csv                    # 더 큰 백본 (약 40분)
 P="--attr-probe probe-clip+osnet-ft --prefix clip_vit_b16-ftpair"
 python tools/hubness.py $P --feat none  $G --out results/hubness_clippair.csv
 python tools/hubness.py $P --feat adabn $G --out results/hubness_clippair_adabn.csv
-python tools/kreciprocal.py $P --hub-none results/hubness_clippair.csv \n    --hub-adabn results/hubness_clippair_adabn.csv --out results/kreciprocal_clippair.csv
+python tools/kreciprocal.py $P --hub-none results/hubness_clippair.csv \
+    --hub-adabn results/hubness_clippair_adabn.csv --out results/kreciprocal_clippair.csv
 python tools/eval_shift.py && python tools/eval_msmt.py   # 일반화 시험
 python tools/synthesize_lowlight.py --mode mot --src data/raw/mot17/MOT17/train --out data/vast_mot \
     --sequences MOT17-02-FRCNN MOT17-04-FRCNN MOT17-09-FRCNN
@@ -408,8 +411,13 @@ python tools/hubness.py --ks 10 50 100 --betas 0 0.25 0.5 0.75 1 1.25 1.5 2 3 \
 python tools/failure_analysis.py
 python demo/server.py
 ```
-가중치: OSNet은 torchreid Model Zoo의 Market-1501 학습 가중치(`weights/osnet_x1_0_market1501.pth`), 미세조정 가중치는 `weights/osnet_x1_0_vast_lowlight_ft.pth`(로컬 생성, 레포 미포함),
-Zero-DCE는 공식 레포의 `Epoch99.pth`(`weights/zerodce_epoch99.pth`)를 사용합니다.
+가중치: OSNet은 torchreid Model Zoo의 Market-1501 학습 가중치(`weights/osnet_x1_0_market1501.pth`), Zero-DCE는 공식 레포의 `Epoch99.pth`(`weights/zerodce_epoch99.pth`)를 사용합니다.
+
+직접 학습한 가중치(CLIP ViT-B/16 1개, OSNet 미세조정 7개)는 git에 넣지 않고 [GitHub Release `weights-v1`](https://github.com/20221000/VAST-ReID-/releases/tag/weights-v1)에 첨부되어 있습니다. 받은 파일을 `weights/`에 넣으면 학습 없이 평가·데모를 실행할 수 있습니다.
+```bash
+gh release download weights-v1 -R 20221000/VAST-ReID- -D weights          # 전체 (약 430MB)
+gh release download weights-v1 -R 20221000/VAST-ReID- -D weights -p "osnet_*"   # OSNet만 (약 85MB)
+```
 
 ## 레포 구조
 ```
