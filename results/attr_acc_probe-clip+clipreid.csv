@@ -1,0 +1,4 @@
+model,level,upper_color,lower_color,sleeve,lower_type,bag,hat,mean_acc
+clip_ViT-B-16+clip_vit_b16-ftpair+linear_probe,normal,0.8213,0.7317,0.9375,0.8923,0.6801,0.9765,0.8399
+clip_ViT-B-16+clip_vit_b16-ftpair+linear_probe,low,0.8142,0.7183,0.9364,0.8793,0.6656,0.9775,0.8319
+clip_ViT-B-16+clip_vit_b16-ftpair+linear_probe,extreme,0.7809,0.6488,0.9335,0.8349,0.6145,0.9768,0.7982

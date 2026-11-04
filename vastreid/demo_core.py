@@ -115,18 +115,24 @@ def caption(pid: int) -> str:
 
 # ------------------------------------------------------------------ 이미지 검색
 def samples(level: str, seed: int | None = None, n: int = N_SAMPLES) -> list[dict]:
-    """seed 없음: 고정 샘플(Market 24명). seed 있음: Market query 절반 + MSMT17 query 절반을 무작위로 섞음.
-    idx는 각 데이터셋 query 목록의 인덱스 (조도를 바꿔도 같은 인물)."""
+    """seed 없음: 고정 샘플(Market 24명). seed 있음: Market·MSMT17·Night600(실제 야간) query를 나눠 무작위로 섞음.
+    idx는 각 데이터셋 query 목록의 인덱스 (조도를 바꿔도 같은 인물). Night600은 실제 야간 사진이라 조도 선택과 무관."""
     q = items(level, "query")
     mk = lambda i: {"ds": "market", "idx": i, "name": q[i].path.stem, "url": img_url(level, "query", q[i].path.name)}
     if seed is None:
         return [mk(i) for i in sample_idx()]
     rng = random.Random(seed)
-    out = [mk(i) for i in rng.sample(range(len(q)), n // 2)]
-    mq = msmt_items("query")
-    if msmt_ready():
+    extra = [ds for ds, ok in (("msmt", msmt_ready()), ("night", night_ready())) if ok]
+    k = n // (1 + len(extra))
+    out = [mk(i) for i in rng.sample(range(len(q)), n - k * len(extra))]
+    if "msmt" in extra:
+        mq = msmt_items("query")
         out += [{"ds": "msmt", "idx": i, "name": mq[i].path.stem,
-                 "url": msmt_url(level, "query", mq[i].path.name)} for i in rng.sample(range(len(mq)), n - n // 2)]
+                 "url": msmt_url(level, "query", mq[i].path.name)} for i in rng.sample(range(len(mq)), k)]
+    if "night" in extra:
+        nq = night_items("query")
+        out += [{"ds": "night", "idx": i, "name": nq[i].path.stem,
+                 "url": night_url("query", nq[i].path.name)} for i in rng.sample(range(len(nq)), k)]
     rng.shuffle(out)
     return out
 
@@ -244,6 +250,118 @@ def _msmt_arr(key: str) -> np.ndarray:
     return np.array([x.pid if key == "pid" else x.camid for x in msmt_items("gallery")])
 
 
+# ------------------------------------------------------------------ Night600 (실제 야간, 학습에 쓰지 않음)
+NIGHT_NAME = re.compile(r"^\d{6}_c\d_\d{6}$")
+NIGHT_KR_BETA = 0.1  # 재순위화 위 CSLS β: Market 검증(results/kreciprocal_clippair.csv)에서 고른 값
+
+
+@lru_cache(maxsize=None)
+def night_items(split: str):
+    from vastreid.data import list_night600
+    return list_night600(split)
+
+
+@lru_cache(maxsize=1)
+def night_ready() -> bool:
+    """tools/eval_night.py 특징 캐시가 있어야 Night600 샘플을 보여줌."""
+    return bool(night_items("query")) and (ROOT / f"outputs/features/night__{BACKBONES[DEFAULT_BACKBONE]}__gallery.pt").exists()
+
+
+@lru_cache(maxsize=1)
+def _night_index() -> dict:
+    return {(sp, x.path.stem): i for sp in ("query", "gallery") for i, x in enumerate(night_items(sp))}
+
+
+def night_path(split: str, stem: str) -> Path:
+    i = _night_index().get((split, stem)) if NIGHT_NAME.match(stem) else None
+    if i is None:
+        raise ValueError("bad image")
+    return night_items(split)[i].path
+
+
+def night_url(split: str, name: str) -> str:
+    return f"/img_night/{split}/{Path(name).stem}"
+
+
+@lru_cache(maxsize=None)
+def night_feats(prefix: str, split: str) -> np.ndarray | None:
+    p = ROOT / f"outputs/features/night__{prefix}__{split}.pt"
+    if not p.exists():
+        return None
+    return torch.nn.functional.normalize(torch.load(p, weights_only=True)["feats"].float(), dim=1).numpy()
+
+
+@lru_cache(maxsize=None)
+def night_hub(prefix: str, k: int = 50) -> np.ndarray:
+    """CSLS hub 점수: Night600 train 일부(라벨 미사용, tools/eval_night.py와 같은 3,000장)의 top-k 평균 유사도."""
+    g = torch.from_numpy(night_feats(prefix, "gallery")).to(DEV)
+    r = torch.from_numpy(night_feats(prefix, "ref")).to(DEV)
+    return (g @ r.T).topk(k, dim=1).values.mean(1).cpu().numpy()
+
+
+@lru_cache(maxsize=None)
+def _night_kr(prefix: str):
+    p = ROOT / f"outputs/demo/krfull_night__{prefix}.npy"  # tools/build_demo_night.py
+    return np.load(p, mmap_mode="r") if p.exists() else None
+
+
+@lru_cache(maxsize=None)
+def _night_arr(key: str) -> np.ndarray:
+    return np.array([x.pid if key == "pid" else x.camid for x in night_items("gallery")])
+
+
+def night_search(qidx: int, backbone: str = DEFAULT_BACKBONE, csls: bool = True, adabn: bool = False,
+                 kr: bool = False, attrs: dict | None = None) -> dict:
+    """Night600 query → Night600 gallery(14,351장). 쿼리·갤러리 모두 실제 야간 사진이며 어떤 백본도 Night600으로 학습하지 않음."""
+    notes = ["실제 야간 사진(Night600)이라 조도 선택은 적용되지 않습니다 · 어떤 백본도 Night600으로 학습하지 않았습니다"]
+    if night_feats(BACKBONES.get(backbone, ""), "gallery") is None:
+        notes.append(f"{BACKBONE_LABEL.get(backbone, backbone)} 특징이 없어 기본 백본으로 검색했습니다")
+        backbone = DEFAULT_BACKBONE
+    pf = BACKBONES[backbone]
+    qi, gi = night_items("query"), night_items("gallery")
+    q = qi[qidx]
+    gf, qf = night_feats(pf, "gallery"), night_feats(pf, "query")[qidx]
+    cos = gf @ qf
+    score, use_kr = cos.copy(), False
+    full = _night_kr(pf) if kr else None
+    if full is not None:
+        score, use_kr = -np.asarray(full[qidx], dtype=np.float32), True  # k-reciprocal 거리 (작을수록 가까움)
+    elif kr:
+        notes.append("이 백본은 재순위화를 미리 계산하지 않아 Hub 보정까지만 적용했습니다")
+    if csls:
+        score = score - (NIGHT_KR_BETA if use_kr else 1.0) * night_hub(pf)
+    if attrs and any(attrs.values()):
+        notes.append("Night600은 속성 라벨이 없어 목격자 속성을 반영하지 않았습니다")
+    if adabn:
+        notes.append("AdaBN은 Market 기준이라 Night600에는 적용하지 않았습니다")
+    gp = _night_arr("pid")
+    valid = ~((gp == q.pid) & (_night_arr("cam") == q.camid))
+    score = np.where(valid, score, -np.inf)
+    order = np.argsort(-score)
+    res = []
+    for r, j in enumerate(order[:10], 1):
+        g = gi[j]
+        ok = bool(g.pid == q.pid)
+        res.append({"rank": r, "url": night_url("gallery", g.path.name), "name": g.path.stem, "glvl": "night",
+                    "score": round(float(score[j]), 3), "sim": round(float(cos[j]), 3), "pid": int(g.pid),
+                    "cam": f"cam{g.camid + 1}", "illum": "실제 야간", "ok": ok,
+                    "causes": [] if ok else ["외형이 비슷한 다른 사람 (Night600은 속성 라벨이 없어 세부 원인 분석 불가)",
+                                             "실제 야간 조명"]})
+    ap = _ap(order, gp, valid, q.pid)
+    ranks = np.where(gp[order[np.isfinite(score[order])]] == q.pid)[0]
+    return {
+        "query": {"url": night_url("query", q.path.name), "name": q.path.stem, "level": "실제 야간",
+                  "luminance": _query_lum(q.path), "pid": int(q.pid),
+                  "caption": "Night600 인물 (실제 야간 CCTV, 속성 라벨 없음)", "original": None,
+                  "split": "query", "lvl": "night"},
+        "dataset": "Night600", "gallery_size": len(gi), "g_level": "실제 야간",
+        "rank1": bool(res and res[0]["ok"]), "ap": None if ap is None else round(ap, 3),
+        "first_correct": int(ranks[0]) + 1 if len(ranks) else None, "results": res, "kr": use_kr,
+        "kr_note": " · ".join(notes), "backbone": BACKBONE_LABEL.get(backbone, BACKBONE_LABEL[DEFAULT_BACKBONE]),
+        "attr_weight": 0.0, "attr_strength": "auto",
+    }
+
+
 def _agreement(choices: dict, gp: dict) -> np.ndarray | None:
     """목격자 진술 속성 일치도. λ는 속성 6개 평균 기준으로 검증했으므로, 입력한 속성 수 n에 맞춰 n/6을 곱해
     속성 하나당 가중치를 일정하게 유지 (속성 1~2개만 입력해도 그 하나가 점수를 좌우하지 않도록)."""
@@ -341,6 +459,8 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
            backbone: str = DEFAULT_BACKBONE, attr_strength: str = "auto", ds: str = "market", qidx: int | None = None) -> dict:
     if ds == "msmt" and src_gallery is None:
         return msmt_search(q_level, qidx, backbone, csls, adabn, kr, attrs)
+    if ds == "night" and src_gallery is None:
+        return night_search(qidx, backbone, csls, adabn, kr, attrs)
     feat = "adabn" if adabn else "none"
     pf = BACKBONES.get(backbone, BACKBONES[DEFAULT_BACKBONE])
     gi, gf = items(g_level, "gallery"), feats(g_level, "gallery", feat, pf)

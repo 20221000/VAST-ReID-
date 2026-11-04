@@ -67,8 +67,8 @@ class ImgDS(torch.utils.data.Dataset):
 
 @torch.no_grad()
 def extract(model, paths, device, batch=256, workers=8, cpu_enhance=None, gpu_enhance=None,
-            denoise=None, gate=None) -> tuple[torch.Tensor, float]:
-    """특징과 개선이 적용된 이미지 비율을 반환."""
+            denoise=None, gate=None, flip=False) -> tuple[torch.Tensor, float]:
+    """특징과 개선이 적용된 이미지 비율을 반환. flip=True: 원본과 좌우 반전 특징의 평균(TTA)."""
     dl = torch.utils.data.DataLoader(ImgDS(paths, cpu_enhance=cpu_enhance, denoise=denoise, gate=gate), batch_size=batch,
                                      num_workers=workers, pin_memory=True)
     mean = torch.tensor(MEAN, device=device).view(1, 3, 1, 1)
@@ -82,5 +82,9 @@ def extract(model, paths, device, batch=256, workers=8, cpu_enhance=None, gpu_en
             # Zero-DCE는 전 해상도 32ch 활성값을 쓰므로 작은 묶음으로 나눠 VRAM 초과(WSL sysmem fallback) 방지
             sel = x[applied]
             x[applied] = torch.cat([gpu_enhance(c) for c in sel.split(32)])
-        out.append(model((x - mean) / std).float())
+        x = (x - mean) / std
+        f = model(x).float()
+        if flip:
+            f = (f + model(x.flip(3)).float()) / 2
+        out.append(f)
     return torch.cat(out), n_applied / max(1, len(paths))

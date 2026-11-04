@@ -36,7 +36,10 @@ MODELS = {"사전학습 (Market)": "weights/osnet_x1_0_market1501.pth",
           "짝 일관성 + triplet (12 에폭)*": "weights/osnet_x1_0_vast_lowlight_ft_pair.pth",
           "짝 + triplet, extreme 2/3 (12 에폭)*": "weights/osnet_x1_0_vast_lowlight_ft_pair_ext.pth",
           "짝 + triplet, extreme 2/3 (24 에폭)*": "weights/osnet_x1_0_vast_lowlight_ft_pair_ext_24.pth",
-          "CLIP ViT-B/16 짝 + triplet (12 에폭)*": "weights/clip_vit_b16_vast_lowlight_ft_pair.pth"}
+          "CLIP ViT-B/16 짝 + triplet (12 에폭)*": "weights/clip_vit_b16_vast_lowlight_ft_pair.pth",
+          "CLIP ViT-B/16 + 노이즈 종류 다양화 (12 에폭)*": "weights/clip_vit_b16_vast_lowlight_ft_noise.pth",
+          "CLIP ViT-B/16 짝 + triplet (24 에폭)*": "weights/clip_vit_b16_vast_lowlight_ft_pair_24.pth",
+          "CLIP ViT-B/16 + Night600 train (24 에폭)*": "weights/clip_vit_b16_vast_lowlight_ft_night.pth"}
 
 
 def synth_queries(items, level, cfg):

@@ -24,13 +24,16 @@ function route() {
 window.addEventListener("hashchange", route);
 
 /* ---------------- 1. 이미지 검색 ---------------- */
-// q: 선택한 쿼리 {ds: "market"|"msmt", idx: 그 데이터셋 query 목록 인덱스}, seed: 무작위 샘플 묶음 (없으면 기본 24명)
+// q: 선택한 쿼리 {ds: "market"|"msmt"|"night", idx: 그 데이터셋 query 목록 인덱스}, seed: 무작위 샘플 묶음 (없으면 기본 24명)
 const S = { level: "extreme", q: null, seed: null, src: null, adabn: false, last: null, selected: null };
 
 function fillAttrSelect(id, key) {
   const el = $(id);
   el.innerHTML = `<option value="">상관없음</option>` + META.values[key].map((v) => `<option value="${esc(v)}">${esc(META.value_ko[v] || v)}</option>`).join("");
 }
+
+const DS_NAME = { market: "Market-1501", msmt: "MSMT17", night: "Night600 실제 야간" };
+const DS_TAG = { msmt: "MSMT", night: "실제 야간" };
 
 async function loadSamples() {
   const params = { level: S.level };
@@ -39,7 +42,7 @@ async function loadSamples() {
   if (!S.q && list.length) S.q = { ds: list[0].ds, idx: list[0].idx };
   const isOn = (s) => !S.src && S.q && s.ds === S.q.ds && s.idx === S.q.idx;
   $("#picker").innerHTML = list.map((s) => `<button type="button" data-ds="${s.ds}" data-i="${s.idx}" class="${isOn(s) ? "on" : ""}"
-    aria-label="${s.ds === "msmt" ? "MSMT17" : "Market-1501"} 샘플 ${esc(s.name)}"><img src="${esc(s.url)}" alt="">${s.ds === "msmt" ? '<span class="dstag">MSMT</span>' : ""}</button>`).join("");
+    aria-label="${DS_NAME[s.ds] || "Market-1501"} 샘플 ${esc(s.name)}"><img src="${esc(s.url)}" alt="">${DS_TAG[s.ds] ? `<span class="dstag${s.ds === "night" ? " night" : ""}">${DS_TAG[s.ds]}</span>` : ""}</button>`).join("");
 }
 
 function attrsParams() {
@@ -116,12 +119,12 @@ function showCompare(i) {
   renderWhy();
   $("#compare").innerHTML = `
     <figure><div class="photo"><img src="${esc(r.query.url)}" alt="쿼리 (${esc(r.query.level)})"></div><figcaption>쿼리 · ${esc(r.query.level)}</figcaption></figure>
-    <figure><div class="photo"><img src="${esc(r.query.original)}" alt="쿼리 원본"></div><figcaption>쿼리 원본 · Normal</figcaption></figure>
+    ${r.query.original ? `<figure><div class="photo"><img src="${esc(r.query.original)}" alt="쿼리 원본"></div><figcaption>쿼리 원본 · Normal</figcaption></figure>` : ""}
     <figure><div class="photo"><img src="${esc(x.url)}" alt="${x.rank}위 결과"></div><figcaption>${x.rank}위 · ${x.ok ? "정답" : "오답"} · ID ${x.pid > 0 ? x.pid : "없음"}</figcaption></figure>
-    <p class="foot" style="flex:1 1 220px;margin:0">${esc(r.query.caption)}${r.dataset === "MSMT17" ? "" : "<br>(쿼리 인물의 정답 속성, 참고용)"}</p>
-    ${x.ok ? "" : `<div class="aibox wait" id="ai-explain"><b>AI 오답 설명 · 비전 LLM</b><span>쿼리와 오답 사진을 보고 설명을 만드는 중…</span></div>`}`;
+    <p class="foot" style="flex:1 1 220px;margin:0">${esc(r.query.caption)}${r.dataset ? "" : "<br>(쿼리 인물의 정답 속성, 참고용)"}</p>
+    ${x.ok || r.dataset === "Night600" ? "" : `<div class="aibox wait" id="ai-explain"><b>AI 오답 설명 · 비전 LLM</b><span>쿼리와 오답 사진을 보고 설명을 만드는 중…</span></div>`}`;
   $("#compare-box").classList.remove("hidden");
-  if (!x.ok) loadExplain(r, x);
+  if (!x.ok && r.dataset !== "Night600") loadExplain(r, x);
   refit();
 }
 

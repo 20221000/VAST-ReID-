@@ -1,0 +1,50 @@
+section,key,value,note
+image_stats,Night600 query | luma,0.0983,중앙값
+image_stats,Night600 query | black,0.0674,중앙값
+image_stats,Night600 query | glare,0.0,중앙값
+image_stats,Night600 query | noise,0.0146,중앙값
+image_stats,Night600 query | sharp,0.05,중앙값
+image_stats,Night600 query | aspect,2.6333,중앙값
+image_stats,Market normal query | luma,0.3935,중앙값
+image_stats,Market normal query | black,0.0004,중앙값
+image_stats,Market normal query | glare,0.0021,중앙값
+image_stats,Market normal query | noise,0.0372,중앙값
+image_stats,Market normal query | sharp,0.094,중앙값
+image_stats,Market normal query | aspect,2.0,중앙값
+image_stats,Market low query | luma,0.1765,중앙값
+image_stats,Market low query | black,0.0942,중앙값
+image_stats,Market low query | glare,0.0,중앙값
+image_stats,Market low query | noise,0.1386,중앙값
+image_stats,Market low query | sharp,0.7055,중앙값
+image_stats,Market low query | aspect,2.0,중앙값
+image_stats,Market extreme query | luma,0.0793,중앙값
+image_stats,Market extreme query | black,0.276,중앙값
+image_stats,Market extreme query | glare,0.0,중앙값
+image_stats,Market extreme query | noise,0.3089,중앙값
+image_stats,Market extreme query | sharp,3.1957,중앙값
+image_stats,Market extreme query | aspect,2.0,중앙값
+overall,Rank-1,0.0977,
+overall,Rank-10,0.2495,
+overall,median rank of first correct,109.0,
+by_query_luma,Q1 (0.000~0.073),0.055,n=545
+by_query_luma,Q2 (0.073~0.097),0.0954,n=545
+by_query_luma,Q3 (0.097~0.143),0.1028,n=545
+by_query_luma,Q4 (0.143~1.000),0.1376,n=545
+by_luma_gap,쿼리-정답 밝기 차 0~0.02,0.0994,n=1902
+by_luma_gap,쿼리-정답 밝기 차 0.02~0.05,0.0816,n=147
+by_luma_gap,쿼리-정답 밝기 차 0.05~1,0.0916,n=131
+by_camera,cam1,0.0728,"n=302, 평균 밝기 0.127"
+by_camera,cam2,0.0753,"n=425, 평균 밝기 0.129"
+by_camera,cam3,0.2596,"n=104, 평균 밝기 0.116"
+by_camera,cam4,0.032,"n=219, 평균 밝기 0.109"
+by_camera,cam5,0.0681,"n=279, 평균 밝기 0.134"
+by_camera,cam6,0.1222,"n=311, 평균 밝기 0.091"
+by_camera,cam7,0.0986,"n=355, 평균 밝기 0.106"
+by_camera,cam8,0.1784,"n=185, 평균 밝기 0.167"
+hubness,top-10 서로 다른 갤러리 수,10274.0,gallery 14351
+hubness,상위 20장 점유율,0.0089,
+similarity,같은 사람(다른 카메라) 코사인 평균,0.2299,
+similarity,다른 사람 코사인 평균,0.1733,
+similarity,다른 사람 코사인 상위 1%,0.4797,
+aspect,여백으로 2:1 맞춤 (코사인) Rank-1,0.0702,
+aspect,"늘이기 (기본, 코사인) Rank-1",0.0835,

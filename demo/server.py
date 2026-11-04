@@ -42,6 +42,17 @@ def image(level: str, split: str, name: str):
     return FileResponse(p, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
+@app.get("/img_night/{split}/{stem}")
+def image_night(split: str, stem: str):
+    if split not in ("query", "gallery"):
+        raise HTTPException(404)
+    try:
+        p = core.night_path(split, stem)  # 이름 형식·목록에 있는 파일만 허용
+    except ValueError:
+        raise HTTPException(404)
+    return FileResponse(p, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+
+
 @app.get("/img_msmt/{level}/{split}/{stem}")
 def image_msmt(level: str, split: str, stem: str):
     if split not in ("query", "gallery"):
@@ -71,15 +82,16 @@ def search(q_level: str = "low", sample: int | None = None, g_level: str = "norm
            lower_type: str = "", bag: str = "", hat: str = "", backbone: str = core.DEFAULT_BACKBONE,
            ds: str = "market", qidx: int | None = None,
            attr_strength: str = "auto"):
-    if ds not in ("market", "msmt"):
+    if ds not in ("market", "msmt", "night"):
         raise HTTPException(400, "ds")
     if sample is None and src_gallery is None and qidx is None:
         raise HTTPException(400, "sample, qidx or src_gallery")
     if sample is not None and not 0 <= sample < len(core.sample_idx()):
         raise HTTPException(400, "sample")
     if qidx is not None:
-        n = len(core.msmt_items("query")) if ds == "msmt" else len(core.items(_level(q_level), "query"))
-        if not 0 <= qidx < n or (ds == "msmt" and not core.msmt_ready()):
+        n = {"msmt": lambda: len(core.msmt_items("query")), "night": lambda: len(core.night_items("query"))}.get(
+            ds, lambda: len(core.items(_level(q_level), "query")))()
+        if not 0 <= qidx < n or (ds == "msmt" and not core.msmt_ready()) or (ds == "night" and not core.night_ready()):
             raise HTTPException(400, "qidx")
     attrs = {"upper_color": upper_color, "lower_color": lower_color, "sleeve": sleeve,
              "lower_type": lower_type, "bag": bag, "hat": hat}

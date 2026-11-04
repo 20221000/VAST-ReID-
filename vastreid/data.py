@@ -57,3 +57,17 @@ def list_msmt(split: str, root: Path = MSMT_ROOT) -> list[Item]:
             rel, pid = line.split()
             items.append(Item(root / sub / rel, int(pid), int(Path(rel).name.split("_")[2]) - 1))
     return items
+
+
+# ------------------------------------------------------------------ Night600 (실제 야간)
+NIGHT_ROOT = Path(__file__).resolve().parents[1] / "data/raw/night600"
+NIGHT_SPLITS = {"train": "bounding_box_train", "query": "query_3", "gallery": "bounding_box_test"}
+
+
+def list_night600(split: str, root: Path = NIGHT_ROOT) -> list[Item]:
+    """Night600 (IDF, IEEE TMM 2024): 실제 야간 야외 CCTV 600명, 카메라 8대. 파일명 {pid:06d}_c{cam}_{frame}.jpg.
+    query_3은 gallery에서 카메라마다 최대 3장을 뽑은 복사본이므로, 표준 프로토콜(같은 사람·같은 카메라 제외)이 자기 자신을 제외함."""
+    d = Path(root) / NIGHT_SPLITS[split]
+    if not d.is_dir():
+        return []
+    return [Item(f, *parse_name(f.name)) for f in sorted(d.glob("*.jpg"))]

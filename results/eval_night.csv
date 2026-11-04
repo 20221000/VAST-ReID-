@@ -1,0 +1,16 @@
+model,prefix,method,rank1,rank5,rank10,mAP,mINP,num_valid_query
+사전학습 OSNet (Market),osnet_x1_0,cosine,0.020183,0.048624,0.069266,0.007677,0.002699,2180
+사전학습 OSNet (Market),osnet_x1_0,csls,0.022936,0.061009,0.081651,0.008907,0.002711,2180
+사전학습 OSNet (Market),osnet_x1_0,kr+csls,0.02156,0.053211,0.07156,0.009529,0.002756,2180
+"OSNet 미세조정 (Market, 고정 합성)",osnet_x1_0-ft,cosine,0.025688,0.06789,0.098624,0.009928,0.002759,2180
+"OSNet 미세조정 (Market, 고정 합성)",osnet_x1_0-ft,csls,0.038532,0.08945,0.131193,0.012535,0.002756,2180
+"OSNet 미세조정 (Market, 고정 합성)",osnet_x1_0-ft,kr+csls,0.030734,0.071101,0.100917,0.013676,0.003034,2180
+"OSNet 최종 (Market + MSMT17, 24 에폭)",osnet_x1_0-ftmsmt24,cosine,0.054587,0.120642,0.162844,0.019931,0.002869,2180
+"OSNet 최종 (Market + MSMT17, 24 에폭)",osnet_x1_0-ftmsmt24,csls,0.062844,0.137156,0.188991,0.023415,0.002959,2180
+"OSNet 최종 (Market + MSMT17, 24 에폭)",osnet_x1_0-ftmsmt24,kr+csls,0.069725,0.126147,0.163761,0.030229,0.003665,2180
+OSNet 짝 + triplet (24 에폭),osnet_x1_0-ftpairext24,cosine,0.068349,0.125688,0.170183,0.01909,0.002823,2180
+OSNet 짝 + triplet (24 에폭),osnet_x1_0-ftpairext24,csls,0.074771,0.145413,0.195413,0.024642,0.002914,2180
+OSNet 짝 + triplet (24 에폭),osnet_x1_0-ftpairext24,kr+csls,0.076606,0.142202,0.177064,0.03134,0.003492,2180
+CLIP ViT-B/16 짝 + triplet (12 에폭),clip_vit_b16-ftpair,cosine,0.083486,0.164679,0.215138,0.02713,0.002941,2180
+CLIP ViT-B/16 짝 + triplet (12 에폭),clip_vit_b16-ftpair,csls,0.097706,0.18945,0.249541,0.031806,0.003191,2180
+CLIP ViT-B/16 짝 + triplet (12 에폭),clip_vit_b16-ftpair,kr+csls,0.094037,0.162844,0.212385,0.042307,0.003662,2180

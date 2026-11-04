@@ -54,6 +54,10 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 8. **짝 일관성 + triplet**: 같은 사진의 밝은/어두운 특징을 가깝게, 같은 사람은 가깝게·다른 사람은 멀게 → MSMT17·색 조명·모든 mAP 개선(Extreme 조합 83.3, mAP 79.5).
 9. **더 큰 백본 (CLIP ViT-B/16)**: 같은 학습 방법으로 백본만 교체 → 모든 시험에서 최고. 처음 보는 노이즈 53.7 → 66.4, 색 조명 60.0 → 88.0, MSMT17 51.3 → 81.2, Extreme 조합 84.4 (mAP 84.3).
 
+> **실제 야간 검증 (Night600)**: 위 결과는 모두 합성 저조도입니다. 실제 야간 CCTV 데이터셋 Night600(600명, 학습에 쓰지 않음)에서는
+> 최종 CLIP 모델도 Rank-1 **9.8%**에 그쳤습니다. Night600으로 직접 학습한 논문 결과도 11~17%라 데이터셋 자체가 매우 어렵지만,
+> 합성(거친 입자 노이즈)과 실제(카메라가 노이즈를 지워 뭉개진 영상)의 차이도 확인했습니다. [실제 야간 검증](#실제-야간-검증-night600) 참고.
+
 - 어두워지면 Rank-1이 94.5 → 48.5로 거의 절반이 됩니다.
 - 사진을 밝게 만드는 전처리는 노이즈까지 증폭시켜 오히려 성능을 떨어뜨렸습니다.
 - 원인을 분석해 보니, 노이즈를 옷의 잔무늬로 착각해 **서로 다른 사람의 어두운 query가 같은 몇몇 gallery 이미지로 몰리고**(hubness) 있었습니다.
@@ -289,6 +293,34 @@ Rank-1 (gallery는 모두 주간)
 - Market 점수만 보면 Market만 학습한 모델이 낫지만, **처음 보는 조건에서는 최종 모델이 훨씬 강합니다**(특히 색 조명 +20). OSNet 중에서는 이 모델이 가장 일반화가 좋았고, 지금 데모 기본은 아래 CLIP ViT-B/16 모델입니다.
 - MSMT17은 Kaggle 비공식 사본(`ouassimaazzouzi/msmt17`, 126,441장으로 공식 수치와 일치)을 사용했습니다. 공식 배포는 동의서 신청 방식입니다.
 
+### 실제 야간 검증: Night600
+합성 저조도로만 평가했다는 한계를 확인하려고, 실제 야간 CCTV 데이터셋 **Night600**([IDF, IEEE TMM 2024](https://github.com/Alexadlu/IDF), 공개 다운로드)으로 검증했습니다.
+야외 카메라 8대, 600명 중 test 300명(query 2,180장 / gallery 14,351장). query·gallery 모두 실제 야간이며, **어떤 모델도 Night600으로 학습하지 않았습니다**(zero-shot, `tools/eval_night.py`, `results/eval_night.csv`).
+
+| 모델 (Rank-1 / mAP) | 외형만 | + CSLS | + k-reciprocal + CSLS |
+|---|---|---|---|
+| 사전학습 OSNet | 2.0 / 0.8 | 2.3 / 0.9 | 2.2 / 1.0 |
+| OSNet 미세조정 (Market) | 2.6 / 1.0 | 3.9 / 1.3 | 3.1 / 1.4 |
+| OSNet (Market + MSMT17, 24 에폭) | 5.5 / 2.0 | 6.3 / 2.3 | 7.0 / 3.0 |
+| OSNet 짝 + triplet (24 에폭) | 6.8 / 1.9 | 7.5 / 2.5 | 7.7 / 3.1 |
+| **CLIP ViT-B/16 (최종)** | **8.3 / 2.7** | **9.8 / 3.2** | 9.4 / **4.2** |
+| 참고: Night600으로 **직접 학습**한 논문 결과 | BoT 11.2 / 5.4 · AGW 12.5 / 6.1 · TransReID 16.0 / 8.4 · IDF 17.2 / 9.2 | | |
+
+순위(사전학습 < 미세조정 < MSMT17 추가 < CLIP)는 합성 시험과 같지만 절대값이 매우 낮습니다. 원인 분석(`tools/night_analysis.py`, `results/night_analysis.csv`, CLIP + CSLS 기준):
+
+- **데이터셋 자체가 매우 어려움**: 논문은 대부분 "사람 눈에도 거의 안 보이는" 사진이라고 설명하며, Night600으로 학습해도 11~17%입니다.
+- **합성과 실제의 노이즈 성격이 반대**: 밝기는 학습 범위 안(중앙값 0.10, 합성 Low 0.18·Extreme 0.08 사이)이지만,
+  밝기 대비 입자 노이즈는 합성 Extreme 0.309 vs Night600 **0.015**(주간 Market 0.037보다도 작음), 선명도는 3.20 vs **0.050**(주간 0.094보다 흐림).
+  실제 CCTV는 카메라가 노이즈를 지워 **매끈하게 뭉개진** 영상인데, 모델은 거친 노이즈를 뚫고 보는 법만 배웠습니다.
+- **특징이 사람을 구분하지 못함**: 같은 사람(다른 카메라) 코사인 평균 0.23 vs 다른 사람 0.17, 다른 사람 상위 1%는 0.48. 첫 정답 순위 중앙값 109위, Top-10 25%.
+- **카메라 편차가 큼**: 카메라별 Rank-1이 3.2%(cam4) ~ 26.0%(cam3)로, 밝기로는 설명되지 않음(가장 어두운 cam6이 12.2%). 가로등 위치·시점·움직임 블러 영향으로 보임.
+- 원인이 **아닌** 것: hubness(상위 20장 점유율 0.9%, 주간 수준 → CSLS 이득이 작음), 쿼리 밝기(가장 밝은 1/4도 13.8%), 쿼리-정답 밝기 차이, 종횡비(Night600은 2.6:1이지만 여백으로 2:1을 맞추면 오히려 8.4 → 7.0).
+
+같은 날 추가로 시도한 것 (모두 Market 합성 기준):
+- **좌우 반전 TTA**(`tools/finetune.py --extract-only --flip`, `results/finetune_clip_pair_flip.csv`): 외형만 Extreme 77.2 → 78.0, Low 92.7 → 93.1. 재순위화 조합에서는 차이 없음(84.4 → 84.6, `results/kreciprocal_clippair-flip_cr.csv`).
+- **속성 분류기를 CLIP-ReID 특징으로 재학습**(`tools/attr_probe.py --src clip+clipreid`): 속성 정확도 Extreme 78.3 → 79.8%, 검색 정답률은 그대로(`results/kreciprocal_clippair_cr.csv`).
+- **노이즈 종류 다양화**(`--noise-aug`: 줄무늬·색 얼룩·노이즈 제거 뭉개짐, 세기·JPEG 범위는 그대로): Market Extreme 77.2 → 76.2(`results/finetune_clip_noise.csv`). 처음 보는 노이즈·Night600 평가는 다음 작업.
+
 ### 저조도 미세조정 (`results/finetune.csv`, `results/kreciprocal_ft.csv`)
 학습 없는 방법으로는 극저조도가 35.6에서 더 오르지 않아, 마지막 단계로 OSNet을 저조도에 맞게 추가 학습했습니다 (`tools/finetune.py`).
 
@@ -324,7 +356,8 @@ Rank-1 (gallery는 모두 주간)
    백본(최종 CLIP ViT-B/16 / OSNet 미세조정 2종 / OSNet 사전학습), 저조도 보정(AdaBN), 거리 보정(CSLS, k-reciprocal), 속성 필터(목격자 진술 재순위화)를 바꿔 가며 비교할 수 있고,
    오답 카드는 실제 실패 원인(사람이 아닌 이미지, hub 이미지, 유사 의복, 조도)과 **AI 오답 설명**(비전 LLM, 로컬 전용)을 보여줍니다.
    샘플 24개 기준 Extreme Rank-1(CSLS + k-reciprocal): 사전학습 OSNet + AdaBN 10/24 → OSNet 미세조정(Market) 16/24 → OSNet(Market + MSMT17)·CLIP 20/24.
-   **이미지 변경**을 누를 때마다 Market-1501 12명 + MSMT17 12명을 무작위로 뽑습니다. MSMT17 인물은 MSMT17 주간 갤러리(82,161장)에서 찾습니다
+   **이미지 변경**을 누를 때마다 Market-1501·MSMT17·**Night600(실제 야간, 보라색 "실제 야간" 표시)** 각 8명을 무작위로 뽑습니다. Night600 인물은 Night600 야간 갤러리(14,351장)에서 찾습니다
+   (`tools/eval_night.py` 특징 + `tools/build_demo_night.py` 재순위화 캐시, 조도 선택은 적용되지 않음). MSMT17 인물은 MSMT17 주간 갤러리(82,161장)에서 찾습니다
    (`tools/build_demo_msmt.py`로 특징을 미리 추출, 재순위화는 Market의 MSMT17 학습 백본(CLIP, OSNet)만 전체 쿼리에 미리 계산).
    예: 샘플 #0 극저조도 쿼리의 정답 순위 2,548위 → AdaBN + CSLS 적용 시 1위.
 2. **텍스트 검색**: 인상착의 문장 → 속성 추출(키워드 규칙, 로컬에서는 LLM 선택 가능) → 속성 일치 순 검색, 선택한 인물의 **AI 시맨틱 캡션**, 그 인물로 이미지 재검색.
@@ -416,6 +449,11 @@ python tools/kreciprocal.py $P --hub-none results/hubness_clippair.csv \
 python tools/build_demo_cache.py --prefix clip_vit_b16-ftpair   # 데모 기본 백본 캐시
 python tools/failure_analysis.py && python tools/build_demo_msmt.py   # 이미 만든 백본은 건너뜀
 python tools/eval_shift.py && python tools/eval_msmt.py   # 일반화 시험
+# 실제 야간 검증: Night600 (github.com/Alexadlu/IDF의 Google Drive night600.zip → data/raw/night600)
+python tools/eval_night.py && python tools/night_analysis.py && python tools/build_demo_night.py
+python tools/finetune.py --arch clip_vit_b16 --extract-only --flip --out weights/clip_vit_b16_vast_lowlight_ft_pair.pth \
+    --prefix clip_vit_b16-ftpair-flip --csv results/finetune_clip_pair_flip.csv    # 좌우 반전 TTA
+python tools/attr_probe.py --src clip+clipreid --name probe-clip+clipreid         # CLIP-ReID 특징 속성 분류기
 python tools/synthesize_lowlight.py --mode mot --src data/raw/mot17/MOT17/train --out data/vast_mot \
     --sequences MOT17-02-FRCNN MOT17-04-FRCNN MOT17-09-FRCNN
 python tools/track_mot.py      # TrackEval은 공식 레포에서 설치
@@ -458,10 +496,12 @@ docs/         개발 일지(DEVLOG.md), 그림
 - **지식 증류**: CLIP 모델을 선생님으로 가벼운 OSNet을 학습해, 추론 비용을 낮추면서 성능 유지 (공개 데모·CPU용).
 - **검증용 ID 분리**: train 일부 인물을 학습에서 빼 λ·β 검증에 사용 (지금은 학습한 이미지로 검증해 속성 가중치가 과소 선택됨).
 - **색 변화 범위 확대**.
-- **실제 야간 검증**: NightReID(동의서 신청 필요).
+- **실제 야간 대응**: ① Night600 train 300명으로 미세조정(코드 준비됨: `tools/finetune.py --night`, test 300명과 겹치지 않음) ② 합성을 실제 카메라처럼 바꾸기(노이즈 제거 뭉개짐·움직임 블러·가로등 번짐) ③ NightReID(동의서 필요)로 추가 검증.
+- **CLIP 24 에폭 이어 학습**(`--init ... --lr 7e-6`), 노이즈 다양화 모델의 일반화(처음 보는 노이즈·MSMT17·Night600) 평가.
 
 ## 한계
-- 저조도는 합성입니다. 실제 야간 CCTV는 카메라 내부에서 노이즈를 제거하므로, 합성 노이즈가 실제보다 거칠 수 있습니다.
+- 저조도는 합성입니다. **실제 야간(Night600)에서는 최종 모델도 Rank-1 9.8%**로, 합성 시험 결과(Extreme 84.4)를 실제 야간 성능으로 보면 안 됩니다.
+  실제 CCTV는 카메라 내부에서 노이즈를 제거해 뭉개진 영상이라, 거친 노이즈 중심의 합성과 성격이 다릅니다([실제 야간 검증](#실제-야간-검증-night600)).
 - **AdaBN 효과는 과대평가됐을 수 있습니다.** 합성 저조도는 이미지 전체에 같은 방식으로 적용된 변화라, 정규화 통계를 다시 맞추는 AdaBN과 특히 잘 맞습니다. 실제 야간 영상은 조명이 고르지 않고(가로등, 그림자) 카메라마다 처리 방식이 달라 효과가 작을 수 있습니다.
 - **미세조정 결과도 과대평가됐을 수 있습니다.** 학습용 저조도와 평가용 저조도가 같은 합성 모델(노출·노이즈 범위)에서 나와, 모델이 이 합성 노이즈의 특성 자체를 배웠을 수 있습니다. 실제 야간 영상 검증이 필요합니다.
 - OSNet 미세조정은 밝은 사진 성능을 조금 떨어뜨립니다(Rank-1 94.5 → 91.3). CLIP 백본은 94.4로 거의 회복합니다.
@@ -470,6 +510,7 @@ docs/         개발 일지(DEVLOG.md), 그림
 - AdaBN은 적응용 이미지가 평가 환경과 조도 외에는 같아야 효과가 있습니다 (YOLO AdaBN 실패 사례).
 - λ, β 검증에 쓴 train 이미지는 OSNet이 학습한 이미지라 검증 점수가 과대평가됩니다(보수적인 λ 선택 쪽으로 치우침).
 - 비전 LLM 실험은 50명 샘플이라 오차 범위가 큽니다.
+- 같은 이름의 다른 연구가 있습니다: [VAST-ReID (WACV 2026)](https://wacv.thecvf.com/virtual/2026/oral/1192)는 실제 저조도 감시 영상 1,211개·169명 데이터셋으로, 이 프로젝트와 별개입니다.
 
 ## Ethics & Privacy
 - 실촬영 없이 공개 연구용 데이터셋(Market-1501)만 사용

@@ -178,3 +178,4 @@ table.trk th:first-child, table.trk td:first-child { text-align: left; }
 .aibox { flex: 1 1 100%; background: #FFF8EA; border: 1px solid #F7DFAE; border-radius: 12px; padding: 14px 16px; line-height: 1.65; }
 .aibox b { display: block; font-size: 12px; font-weight: 600; color: var(--warn); margin-bottom: 6px; }
 .aibox.wait span { color: var(--sub); }
+.picker .dstag.night { background: rgba(88, 28, 135, .85); }

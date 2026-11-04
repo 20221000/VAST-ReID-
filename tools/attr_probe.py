@@ -41,7 +41,8 @@ def _l2(x):
 
 
 def load(level: str, split: str):
-    """특징 출처: clip(CLIP ViT-B/16) / osnet-ft(저조도 미세조정 OSNet) / clip+osnet-ft(둘을 L2 정규화 후 이어 붙임)."""
+    """특징 출처: clip(CLIP ViT-B/16) / osnet-ft(저조도 미세조정 OSNet) / clip+osnet-ft(둘을 L2 정규화 후 이어 붙임)
+    / clip+clipreid(CLIP + 저조도 미세조정 CLIP-ReID, 최종 백본)."""
     d = np.load(SRC / f"clip_ViT-B-16__{level}__{split}.npz")
     pids, parts = d["pids"], []
     if "clip" in SOURCE:
@@ -51,6 +52,11 @@ def load(level: str, split: str):
         f = torch.load(ROOT / f"outputs/features/osnet_x1_0-ft__none__{level}__{split}.pt", weights_only=True)["feats"]
         if not np.array_equal(pids, np.array([x.pid for x in list_split(ROOT / "data/vast", level, split)])):
             raise RuntimeError(f"이미지 순서 불일치: {level}/{split}")
+        parts.append(_l2(f.float().numpy()))
+    if "clipreid" in SOURCE:
+        f = torch.load(ROOT / f"outputs/features/clip_vit_b16-ftpair__none__{level}__{split}.pt", weights_only=True)["feats"]
+        if len(f) != len(pids):
+            raise RuntimeError(f"이미지 수 불일치: {level}/{split}")
         parts.append(_l2(f.float().numpy()))
     return pids, np.concatenate(parts, axis=1)
 
@@ -78,7 +84,7 @@ def main():
     global SOURCE
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default="clip", choices=["clip", "osnet-ft", "clip+osnet-ft"])
+    ap.add_argument("--src", default="clip", choices=["clip", "osnet-ft", "clip+osnet-ft", "clip+clipreid"])
     ap.add_argument("--name", default="probe", help="출력 이름: outputs/attr_probs/{name}__*.npz, results/attr_acc_{name}.csv")
     args = ap.parse_args()
     SOURCE = args.src
@@ -139,7 +145,8 @@ def main():
                 n += int(m.sum())
             accs[attr] = c / max(n, 1)
         rows.append({"model": {"clip": "clip_ViT-B-16", "osnet-ft": "osnet_x1_0-ft",
-                               "clip+osnet-ft": "clip_ViT-B-16+osnet_x1_0-ft"}[SOURCE] + "+linear_probe", "level": lv, **{a: round(v, 4) for a, v in accs.items()},
+                               "clip+osnet-ft": "clip_ViT-B-16+osnet_x1_0-ft",
+                               "clip+clipreid": "clip_ViT-B-16+clip_vit_b16-ftpair"}[SOURCE] + "+linear_probe", "level": lv, **{a: round(v, 4) for a, v in accs.items()},
                      "mean_acc": round(float(np.mean(list(accs.values()))), 4)})
         print(f"  [{lv}] " + "  ".join(f"{a} {v*100:.1f}" for a, v in accs.items())
               + f"  | mean {np.mean(list(accs.values()))*100:.1f}")

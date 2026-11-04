@@ -1,0 +1,11 @@
+model,feat,method,protocol,query_level,gallery_level,rank1,rank5,rank10,mAP,mINP,num_valid_query
+clip_vit_b16-ftpair-flip,none,cosine,same,normal,normal,0.945071,0.981295,0.989608,0.858163,0.623447,3368
+clip_vit_b16-ftpair-flip,none,cosine,same,low,low,0.925178,0.973575,0.984561,0.798712,0.504423,3368
+clip_vit_b16-ftpair-flip,none,cosine,cross,low,normal,0.930523,0.977138,0.985451,0.827345,0.576033,3368
+clip_vit_b16-ftpair-flip,none,cosine,same,extreme,extreme,0.730701,0.885095,0.924287,0.511756,0.169413,3368
+clip_vit_b16-ftpair-flip,none,cosine,cross,extreme,normal,0.780285,0.894002,0.927257,0.651512,0.391485,3368
+clip_vit_b16-ftpair-flip,adabn,cosine,same,normal,normal,0.945071,0.981295,0.989608,0.858163,0.623447,3368
+clip_vit_b16-ftpair-flip,adabn,cosine,same,low,low,0.926069,0.972981,0.984264,0.799029,0.505269,3368
+clip_vit_b16-ftpair-flip,adabn,cosine,cross,low,normal,0.930523,0.978325,0.985748,0.828439,0.578956,3368
+clip_vit_b16-ftpair-flip,adabn,cosine,same,extreme,extreme,0.730998,0.883907,0.924881,0.512361,0.169789,3368
+clip_vit_b16-ftpair-flip,adabn,cosine,cross,extreme,normal,0.780879,0.89519,0.929038,0.652807,0.392828,3368

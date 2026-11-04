@@ -12,6 +12,10 @@
         # 짝 일관성(같은 사진의 밝은/어두운 특징을 가깝게) + batch-hard triplet + PK 샘플링(16명 × 4장)
     python tools/finetune.py --arch clip_vit_b16 --online --msmt --pair --pair-extreme 0.6667 --lr 2e-5         --prefix clip_vit_b16-ftpair --out weights/clip_vit_b16_vast_lowlight_ft_pair.pth --csv results/finetune_clip_pair.csv
         # 더 큰 백본: CLIP ViT-B/16 이미지 인코더 (vastreid/clip_reid.py, 분류기는 새로 초기화)
+    python tools/finetune.py --arch clip_vit_b16 --online --msmt --night --pair --pair-extreme 0.6667 \
+        --init weights/clip_vit_b16_vast_lowlight_ft_pair.pth --lr 7e-6 --no-extract \
+        --out weights/clip_vit_b16_vast_lowlight_ft_night.pth
+        # 실제 야간 Night600 train(300명, test 300명과 겹치지 않음) 추가. 이미 어두운 사진이라 합성하지 않음
 
 - 학습 데이터: train split만 (751명 × 3조도 = 38,808장). query·gallery는 학습에 전혀 사용하지 않음.
 - 에폭 수는 미리 고정 (테스트 성능으로 고르지 않음). 마지막 에폭 가중치를 그대로 사용.
@@ -38,7 +42,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from vastreid.data import list_msmt, list_split  # noqa: E402
+from vastreid.data import NIGHT_ROOT, list_msmt, list_night600, list_split  # noqa: E402
 from vastreid.metrics import evaluate_fast  # noqa: E402
 from vastreid.reid import MEAN, STD, extract, gpu_temp  # noqa: E402
 
@@ -56,8 +60,27 @@ class TrainDS(torch.utils.data.Dataset):
     online=True : normal 원본만 읽고, 인덱스 구간에 따라 1/3씩 normal·low·extreme으로 **매번 새로 합성**
                   (노출·노이즈·블러·색·JPEG를 configs/lowlight.yaml 범위에서 새로 뽑음 → 같은 저조도 사진이 반복되지 않음)."""
 
-    def __init__(self, items, labels, online_levels=None, cfg=None):
+    def __init__(self, items, labels, online_levels=None, cfg=None, noise_aug=False):
         self.items, self.labels, self.online_levels, self.cfg = items, labels, online_levels, cfg
+        self.noise_aug = noise_aug
+
+    @staticmethod
+    def _extra_noise(img, rng):
+        """--noise-aug: 합성 센서 노이즈 외의 실제 카메라 노이즈 종류를 각각 확률적으로 추가 (uint8 sRGB).
+        노이즈 세기·JPEG 범위는 configs/lowlight.yaml 그대로 두고 종류만 늘림 → tools/eval_shift.py 설정과 겹치지 않음."""
+        x = img.astype(np.float32)
+        h, w = x.shape[:2]
+        if rng.random() < 0.5:  # 줄무늬(행·열 고정 패턴) 노이즈
+            s = rng.uniform(1.0, 4.0)
+            x += rng.normal(0, s, (h, 1, 1)) if rng.random() < 0.5 else rng.normal(0, s, (1, w, 1))
+        if rng.random() < 0.5:  # 색 얼룩: 저해상도 색 노이즈를 키워 덮음
+            k = int(rng.integers(4, 9))
+            blob = rng.normal(0, rng.uniform(2.0, 6.0), (max(1, h // k), max(1, w // k), 3)).astype(np.float32)
+            x += cv2.resize(blob, (w, h), interpolation=cv2.INTER_LINEAR)
+        x = np.clip(x, 0, 255).astype(np.uint8)
+        if rng.random() < 0.3:  # 카메라 노이즈 제거로 생긴 뭉개짐
+            x = cv2.bilateralFilter(x, 5, float(rng.uniform(20, 50)), 3)
+        return x
 
     def __len__(self):
         return len(self.items) * (len(self.online_levels) if self.online_levels else 1)
@@ -69,15 +92,23 @@ class TrainDS(torch.utils.data.Dataset):
         rng = np.random.default_rng(random.getrandbits(64))
         p = sample_params(self.cfg["levels"][lv], rng)
         img, _ = degrade(img, p, rng)
+        if self.noise_aug:
+            img = self._extra_noise(img, rng)
         ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, p.jpeg_quality])  # 오프라인 합성과 같은 JPEG 저장 효과
         return cv2.imdecode(buf, cv2.IMREAD_COLOR)
+
+    @staticmethod
+    def _real_night(item):
+        """Night600(실제 야간) 이미지는 이미 어두우므로 저조도 합성을 하지 않음."""
+        return NIGHT_ROOT in item.path.parents
 
     def _load(self, i):
         if not self.online_levels:
             return cv2.imread(str(self.items[i].path)), self.labels[i]
         n = len(self.items)
         it, lv = self.items[i % n], self.online_levels[i // n]
-        return self._degrade(cv2.imread(str(it.path)), lv), self.labels[i % n]
+        img = cv2.imread(str(it.path))
+        return (img if self._real_night(it) else self._degrade(img, lv)), self.labels[i % n]
 
     @staticmethod
     def _augment(imgs):
@@ -109,8 +140,8 @@ class PairDS(TrainDS):
     짝 일관성 손실은 같은 사진의 밝은/어두운 특징을 가깝게 만들어 조도에 불변인 특징을 직접 학습.
     p_extreme: 저조도 쪽이 extreme일 확률 (2/3이면 전체 이미지 중 extreme 1/3 = 기존 온라인 학습과 같은 비율)."""
 
-    def __init__(self, items, labels, cfg, p_extreme=0.5):
-        super().__init__(items, labels, None, cfg)
+    def __init__(self, items, labels, cfg, p_extreme=0.5, noise_aug=False):
+        super().__init__(items, labels, None, cfg, noise_aug)
         self.p_extreme = p_extreme
 
     def __len__(self):
@@ -118,6 +149,8 @@ class PairDS(TrainDS):
 
     def __getitem__(self, i):
         img = cv2.imread(str(self.items[i].path))
+        if self._real_night(self.items[i]):  # 실제 야간: 짝의 양쪽이 같은 사진 (일관성 손실 0, 분류·triplet만 학습)
+            return torch.stack(self._augment([img, img])), self.labels[i]
         dark = self._degrade(img, "extreme" if random.random() < self.p_extreme else "low")
         return torch.stack(self._augment([img, dark])), self.labels[i]
 
@@ -211,22 +244,34 @@ def train(args):
         items += mi
         labels += [mu[x.pid] for x in mi]
         n_cls += len(mu)
+    if args.night:  # Night600 train(300명, 실제 야간)을 뒤 라벨로 추가. test 300명과 사람이 겹치지 않음
+        assert args.online, "--night는 --online과 함께"
+        ni = list_night600("train")
+        nu = {p: n_cls + i for i, p in enumerate(sorted({x.pid for x in ni}))}
+        items += ni
+        labels += [nu[x.pid] for x in ni]
+        n_cls += len(nu)
     cfg = yaml.safe_load((ROOT / "configs/lowlight.yaml").read_text(encoding="utf-8"))
     if args.pair:  # 에폭당 이미지 수를 기존 온라인 학습(원본 × 3조도)과 같게 맞춤
         assert args.online, "--pair는 --online과 함께"
-        ds = PairDS(items, labels, cfg, args.pair_extreme)
+        ds = PairDS(items, labels, cfg, args.pair_extreme, args.noise_aug)
         n_batches = len(items) * len(LEVELS) // (2 * args.pk_p * args.pk_k)
         dl = torch.utils.data.DataLoader(ds, batch_sampler=PKSampler(labels, args.pk_p, args.pk_k, n_batches),
                                          num_workers=8, pin_memory=True, persistent_workers=True)
     else:
-        ds = TrainDS(items, labels, LEVELS if args.online else None, cfg)
+        ds = TrainDS(items, labels, LEVELS if args.online else None, cfg, args.noise_aug)
         dl = torch.utils.data.DataLoader(ds, batch_size=args.batch, shuffle=True, num_workers=8, pin_memory=True,
                                          drop_last=True, persistent_workers=True)
     model = build(n_cls, args.arch)
     if args.pair:
         model.loss = "triplet"  # train 모드에서 (로짓, 특징) 반환
     if args.init:  # 이어서 학습: 이전 미세조정 가중치(분류기 포함)에서 시작
-        model.load_state_dict(torch.load(args.init, map_location="cpu", weights_only=True), strict=True)
+        sd = torch.load(args.init, map_location="cpu", weights_only=True)
+        own = model.state_dict()
+        for k in [k for k in sd if k.startswith("classifier.") and sd[k].shape != own[k].shape]:
+            own[k][:len(sd[k])] = sd[k]  # 새로 추가한 사람(--night)의 분류기 행만 새로 초기화
+            sd[k] = own[k]
+        model.load_state_dict(sd, strict=True)
         print(f"[ft] init from {args.init}", flush=True)
     acc0 = classifier_acc(model, dl)
     n_img = len(dl) * 2 * args.pk_p * args.pk_k if args.pair else len(ds)
@@ -297,7 +342,7 @@ def adapt_bn(base, level):
     return m.eval()
 
 
-def extract_all(model, prefix=PREFIX):
+def extract_all(model, prefix=PREFIX, flip=False):
     cache = ROOT / "outputs/features"
     models = {"none": model}
     for lv in ["low", "extreme"]:
@@ -308,7 +353,7 @@ def extract_all(model, prefix=PREFIX):
                 continue
             for sp in ["train", "query", "gallery"]:
                 it = list_split(DATA, lv, sp)
-                f, _ = extract(m, [x.path for x in it], DEV)
+                f, _ = extract(m, [x.path for x in it], DEV, flip=flip)
                 torch.save({"n": len(it), "feats": f.cpu()}, cache / f"{prefix}__{tag}__{lv}__{sp}.pt")
         print(f"  [feat] {tag} done  GPU {gpu_temp()}°C", flush=True)
 
@@ -351,6 +396,7 @@ def main():
     ap.add_argument("--online", action="store_true", help="온라인 저조도 합성 (매번 새 노출·노이즈)")
     ap.add_argument("--init", type=Path, default=None, help="이어서 학습할 미세조정 가중치")
     ap.add_argument("--msmt", action="store_true", help="MSMT17 train 추가 (data/raw/msmt17, --online 필요)")
+    ap.add_argument("--night", action="store_true", help="Night600 train 추가 (data/raw/night600, 실제 야간, --online 필요)")
     ap.add_argument("--pair", action="store_true",
                     help="짝 일관성 + batch-hard triplet + PK 샘플링 (--online 필요)")
     ap.add_argument("--pk-p", type=int, default=16, help="--pair: 배치당 사람 수")
@@ -359,6 +405,8 @@ def main():
     ap.add_argument("--cons-w", type=float, default=1.0, help="짝 일관성 손실 가중치")
     ap.add_argument("--pair-extreme", type=float, default=0.5, help="--pair: 저조도 쪽이 extreme일 확률")
     ap.add_argument("--prefix", default=PREFIX, help="특징 캐시 이름")
+    ap.add_argument("--flip", action="store_true", help="특징 추출 시 좌우 반전 평균(TTA)")
+    ap.add_argument("--noise-aug", action="store_true", help="온라인 합성에 줄무늬·색 얼룩·노이즈 제거 뭉개짐 추가")
     ap.add_argument("--csv", type=Path, default=ROOT / "results/finetune.csv")
     args = ap.parse_args()
     random.seed(args.seed)
@@ -370,7 +418,7 @@ def main():
     else:
         model = train(args)
     if not args.no_extract:
-        extract_all(model, args.prefix)
+        extract_all(model, args.prefix, args.flip)
         evaluate_all(args.csv, args.prefix)
 
 

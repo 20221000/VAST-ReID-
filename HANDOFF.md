@@ -455,3 +455,12 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - 현재 최고: CLIP ViT-B/16(`clip_vit_b16-ftpair`) + k-reciprocal + CSLS + 속성, Extreme 84.4 / 84.3, Low 94.2 / 91.8. 데모 기본.
 - 다음 후보: ① 속성 분류기를 CLIP-ReID 특징으로 재학습 ② CLIP 24 에폭 ③ 앙상블·TTA ④ CLIP → OSNet 증류(공개 데모용) ⑤ HF Space 반영(무료 CPU라 ViT 추론 속도 확인 필요).
 - 보류: 발표 자료(11/18), NightReID 동의서.
+
+### 다음 세션 시작점 (11/4 저녁)
+- 오늘 추가: 좌우 반전 TTA(`--flip`), CLIP-ReID 속성 분류기(`probe-clip+clipreid`), 노이즈 다양화(`--noise-aug`, `weights/clip_vit_b16_vast_lowlight_ft_noise.pth`),
+  **Night600 실제 야간 검증**(`data/raw/night600`, `tools/eval_night.py`·`night_analysis.py`·`build_demo_night.py`, CLIP 최고 9.8%), 데모 인물 선택에 Night600.
+- 바로 할 일 (각 1시간 이내, 한 번에 하나):
+  1. CLIP 24 에폭: `finetune.py --arch clip_vit_b16 --online --msmt --pair --pair-extreme 0.6667 --init weights/clip_vit_b16_vast_lowlight_ft_pair.pth --lr 7e-6 --prefix clip_vit_b16-ftpair24 --out weights/clip_vit_b16_vast_lowlight_ft_pair_24.pth --csv results/finetune_clip_pair24.csv` (약 40분)
+  2. Night600 train 추가: 위와 같은 설정에 `--night --no-extract --out weights/clip_vit_b16_vast_lowlight_ft_night.pth` (약 50분) → `--extract-only --prefix clip_vit_b16-ftnight --csv results/finetune_clip_night.csv`
+  3. 새 모델 3개(noise, pair24, night) 일반화 비교: `eval_shift.py`, `eval_msmt.py`, `eval_night.py`(모델 등록 완료)
+- 새 가중치(noise 등)는 아직 Release에 없음 → 필요하면 `gh release upload weights-v1 ...`.

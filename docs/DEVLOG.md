@@ -876,3 +876,50 @@
 - 캐시: `tools/build_demo_cache.py --prefix clip_vit_b16-ftpair`(샘플 k-reciprocal), `tools/failure_analysis.py`(CLIP+CSLS 행 추가), `tools/build_demo_msmt.py`(CLIP MSMT17 특징 + Market 전체 쿼리 k-reciprocal, 이미 만든 백본은 건너뜀). 전체 10분 30초.
 - 실패 원인(CLIP+CSLS, Rank-1 오답): Extreme 819/3,368건(OSNet보다 적음), hub 0% — CSLS 뒤에는 hub가 사라지고 남은 오답은 외형이 비슷한 사람·기타.
 - 데모 벤치마크 표·카드도 CLIP 결과 기준(조합 Low 94.2, Extreme 84.4).
+
+### 11/4 — 약점 보완 시도 + 실제 야간 검증(Night600)
+**좌우 반전 TTA** (`reid.extract(flip=True)`, `finetune.py --extract-only --flip`, 학습 없음)
+- CLIP 외형만: Normal 94.4 → 94.5, Low → 주간 92.7 → 93.1, Extreme → 주간 77.2 → 78.0 (mAP 64.3 → 65.2). 모든 조건에서 소폭 개선.
+- 재순위화 조합 위에서는 Low 94.2 → 94.0, Extreme 84.3 → 84.6으로 차이 없음 → k-reciprocal이 이미 비슷한 보정을 함.
+
+**속성 분류기 재학습** (`attr_probe.py --src clip+clipreid`, CLIP + CLIP-ReID 특징)
+- 속성 평균 정확도: Normal 83.5 → 84.0, Low 82.3 → 83.2, Extreme 78.3 → 79.8%.
+- 검색 조합(`kreciprocal_clippair_cr.csv`)은 Extreme 84.4 → 84.3으로 그대로. 검증으로 고른 λ가 작아 속성이 순위에 거의 반영되지 않음(기존 한계와 같은 원인).
+
+**노이즈 종류 다양화** (`finetune.py --noise-aug`)
+- 온라인 합성 뒤 확률적으로 줄무늬(행·열 고정 패턴, σ 1~4), 색 얼룩(저해상도 색 노이즈 확대), 노이즈 제거 뭉개짐(bilateral) 추가.
+  노이즈 세기·JPEG 범위는 그대로 둬 `eval_shift.py`의 shift_noise 설정(노이즈 2배, JPEG 35~60)과 겹치지 않게 함.
+- CLIP 12 에폭 38분(196초/에폭, 최고 67°C). Market: Normal 94.2, Low → 주간 92.6, Extreme → 주간 76.2 (기존 94.4 / 92.7 / 77.2) → 같은 합성에서는 조금 낮음.
+  목적인 일반화(처음 보는 노이즈·Night600) 평가는 다음 작업으로 미룸.
+
+**실제 야간 데이터셋 검색**
+- Night600(IDF, IEEE TMM 2024): 600명·28,813장·카메라 8대, github.com/Alexadlu/IDF에서 Google Drive 바로 다운로드(70.8MB). → 사용.
+- NightReID(AAAI 2025): 1,500명·53,000장 이상, 동의서 이메일 후 다운로드. Kaggle·HF 사본은 찾지 못함.
+- 같은 이름의 VAST-ReID(WACV 2026, 실제 저조도 영상 169명)가 있음 — 발표 때 구분 필요.
+- Night600 압축은 이미지만 풀고 함께 든 `gallery_to_query.py`는 실행하지 않음(읽기만: query_3는 gallery에서 카메라마다 최대 3장 복사).
+
+**Night600 zero-shot** (`tools/eval_night.py`, `results/eval_night.csv`)
+- 사전학습 OSNet 2.0 → OSNet Market+MSMT17 5.5 → OSNet 짝 6.8 → CLIP 8.3 (CSLS 9.8, 재순위화 mAP 4.2). 순위는 합성 시험과 같지만 절대값이 매우 낮음.
+- 평가 확인: 같은 카메라를 허용하면 Rank-1 100% → 라벨·프로토콜 정상.
+- 논문(IDF) Table II, Night600으로 학습한 결과: BoT 11.2 / 5.4, AGW 12.5 / 6.1, TransReID 16.0 / 8.4, IDF 17.2 / 9.2 → 데이터셋 자체가 매우 어려움.
+
+**원인 분석** (`tools/night_analysis.py`, `results/night_analysis.csv`)
+- 밝기 중앙값 0.098(합성 Low 0.18·Extreme 0.08 사이) → 어두운 정도는 학습 범위 안.
+- 밝기 대비 입자 노이즈 0.015(합성 Extreme 0.309, 주간 0.037), 밝기 대비 선명도 0.050(합성 Extreme 3.20, 주간 0.094)
+  → 실제 CCTV는 노이즈 제거로 **매끈하게 뭉개진** 영상. 합성은 거친 입자 → 성격이 반대. 사진을 나란히 놓아도 확인됨.
+- 쿼리 밝기 4분위 Rank-1 5.5 / 9.5 / 10.3 / 13.8%, 쿼리-정답 밝기 차이별 8~10% → 밝기는 주원인 아님.
+- 카메라별 3.2%(cam4) ~ 26.0%(cam3), 가장 어두운 cam6이 12.2% → 카메라 조건(조명 위치·시점·블러) 영향.
+- hubness 없음(top-10 서로 다른 갤러리 10,274 / 14,351, 상위 20장 0.9%) → Market에서 효과 컸던 CSLS가 여기선 +1.5.
+- 같은 사람 코사인 0.23 vs 다른 사람 0.17(상위 1% 0.48) → 특징 자체가 구분을 못 함. 첫 정답 순위 중앙값 109위.
+- 종횡비(Night600 2.6:1): 여백으로 2:1을 맞추면 8.4 → 7.0으로 오히려 하락 → 늘이기 유지.
+
+**데모**
+- 인물 선택(이미지 변경)에 Night600 8명 추가(Market·MSMT17·Night600 각 8명, 보라색 "실제 야간" 표시). Night600 갤러리 14,351장에서 검색,
+  CSLS 참조는 train 3,000장(라벨 미사용), 재순위화는 `build_demo_night.py`로 CLIP·OSNet 최종만 미리 계산. 조도 선택·AdaBN·속성·AI 오답 설명은 적용하지 않음.
+- 샘플 8명 중 Rank-1 적중 0명(첫 정답 28~1,068위) — 전체 9.8%와 일치.
+- 브라우저가 예전 `app.js`를 캐시해 새 표시가 안 보이는 문제 → `index.html`의 스크립트·스타일 주소에 `?v=` 추가.
+
+**준비만 하고 미룬 것**
+- `finetune.py --night`: Night600 train 300명(14,462장)을 라벨 추가(실제 야간이라 합성 안 함, 짝은 같은 사진 두 장). `--init`의 분류기 크기가 다르면 기존 행만 복사.
+  계획: CLIP 12 에폭 모델에서 lr 7e-6로 12 에폭(24 에폭 이어 학습과 같은 조건 + Night600만 차이) → 약 50분.
+- CLIP 24 에폭 이어 학습은 2 에폭에서 시간 관계로 중단(가중치 저장 전이라 남은 파일 없음).
