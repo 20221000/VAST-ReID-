@@ -795,6 +795,8 @@ def _llm():
 
 
 def _img_path(level: str, split: str, name: str) -> Path:
+    if level == "night":  # Night600 실제 야간 (query·gallery 모두 야간)
+        return night_path(split, name)
     if MSMT_NAME.match(name):
         return msmt_path(level, split, name)
     if level not in LEVELS or split not in ("query", "gallery") or not re.match(r"^-?\d{1,4}_c\ds\d_\d{6}_\d{2}$", name):
@@ -819,8 +821,10 @@ def ai_explain(q_level: str, q_split: str, q_name: str, g_level: str, g_name: st
     """쿼리(현재 조도)와 오답 결과를 함께 보고, 검색 모델이 왜 헷갈렸는지 설명."""
     qp, gp = _img_path(q_level, q_split, q_name), _img_path(g_level, "gallery", g_name)
     hint = "; ".join(causes[:4]) if causes else "없음"
+    where = ("실제 야간 CCTV의 검색 쿼리, 두 번째 사진은 다른 야간 카메라에서 검색 결과로 나온 **다른 사람**입니다"
+             if q_level == "night" else f"{LEVEL_LABEL[q_level]} 조도의 검색 쿼리, 두 번째 사진은 검색 결과로 나온 **다른 사람**입니다")
     text = _llm().chat(_AI_SYSTEM,
-                       f"첫 번째 사진은 {LEVEL_LABEL[q_level]} 조도의 검색 쿼리, 두 번째 사진은 검색 결과로 나온 **다른 사람**입니다. "
+                       f"첫 번째 사진은 {where}. "
                        f"사람 재식별 모델이 왜 두 사람을 같은 사람으로 헷갈렸을지 2~3문장으로 설명해 주세요. "
                        f"옷차림·소지품의 공통점, 조명·노이즈로 사라진 단서, 그리고 두 사람을 구분할 수 있는 차이점을 포함하세요. "
                        f"분석 시스템이 자동으로 찾은 실패 원인 후보: {hint}",
