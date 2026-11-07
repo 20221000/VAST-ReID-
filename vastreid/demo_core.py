@@ -37,7 +37,7 @@ DEFAULT_BACKBONE = "clipn"
 BACKBONE_LABEL = {"clipn": "최종 CLIP ViT-B/16 (Market + MSMT17 + Night600)", "clip": "CLIP ViT-B/16 (Market + MSMT17)",
                   "base": "사전학습 OSNet", "ft": "미세조정 OSNet (Market)", "ftm": "OSNet (Market + MSMT17)"}
 TRAINED_MSMT = (FTM, CLIP, CLIPN)  # MSMT17 train으로도 학습한 백본
-ATTR_STRENGTH = {"strong": 0.3, "max": 0.9}
+ATTR_STRENGTH = {"strong": 0.3}  # λ=0.9는 맞는 진술에도 mAP가 떨어지고 틀린 진술에 크게 무너져 제거 (results/witness_eval.csv)
 # 갤러리 속성 예측: 미세조정 백본은 CLIP + 미세조정 OSNet 특징 결합 분류기 (tools/attr_probe.py --src clip+osnet-ft)
 ATTR_PROBE = {BASE: "probe", FT: "probe-clip+osnet-ft", FTM: "probe-clip+osnet-ft", CLIP: "probe-clip+osnet-ft",
               CLIPN: "probe-clip+osnet-ft"}  # λ (속성 하나당 가중치 = λ/6 → 0.05, 0.15)

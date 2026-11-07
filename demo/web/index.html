@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VAST-ReID 데모</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
-<link rel="stylesheet" href="/web/style.css?v=bench3">
+<link rel="stylesheet" href="/web/style.css?v=witness">
 </head>
 <body>
 <header>
@@ -62,11 +62,10 @@
         <label class="field">진술 반영 강도
           <select id="attr-strength">
             <option value="auto">자동 (검증값 · 정답률 최적)</option>
-            <option value="strong">강하게</option>
-            <option value="max">매우 강하게 (시연용)</option>
+            <option value="strong">강하게 (λ 0.3)</option>
           </select>
         </label>
-        <p class="foot hidden" id="strength-warn" style="margin:-6px 0 0">진술이 틀리면 정답이 크게 밀려날 수 있습니다. 갤러리 속성은 AI 예측이라 진술이 맞아도 일부 정답이 밀릴 수 있습니다.</p>
+        <p class="foot hidden" id="strength-warn" style="margin:-6px 0 0">진술이 맞으면 극저조도에서 정답률이 조금 오르고(최종 모델 +1~2), 틀리면 조금 내려갈 수 있습니다. 갤러리 속성은 AI 예측이라 진술이 맞아도 일부 정답이 밀릴 수 있습니다.</p>
         <label class="field">백본
           <select id="backbone">
             <option value="clipn">최종: CLIP ViT-B/16 + Night600 실제 야간 (Market + MSMT17 + Night600)</option>
@@ -235,6 +234,6 @@
   </div>
 </section>
 
-<script src="/web/app.js?v=ainight"></script>
+<script src="/web/app.js?v=witness"></script>
 </body>
 </html>

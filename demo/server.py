@@ -97,7 +97,7 @@ def search(q_level: str = "low", sample: int | None = None, g_level: str = "norm
              "lower_type": lower_type, "bag": bag, "hat": hat}
     return core.search(_level(q_level), sample, _level(g_level), adabn, csls, beta, lam, attrs,
                        _level(src_level) if src_level else None, src_gallery, kr, backbone if backbone in core.BACKBONES else core.DEFAULT_BACKBONE,
-                       attr_strength if attr_strength in ("auto", "strong", "max") else "auto", ds, qidx)
+                       attr_strength if attr_strength in ("auto", "strong") else "auto", ds, qidx)
 
 
 @app.get("/api/text")

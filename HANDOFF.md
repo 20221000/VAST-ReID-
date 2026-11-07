@@ -472,3 +472,5 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - Release `weights-v1` 가중치 11개(CLIP 4, OSNet 7). 업로드 실패(HTTP 400) 시 먼저 `gh auth status`로 토큰 만료 확인.
 - 다음 후보: ① 다른 실제 야간 데이터로 검증(NightReID 동의서) — Night600과 같은 카메라로 학습했으므로 처음 보는 카메라 성능 확인 필요
   ② 합성을 실제 카메라처럼(노이즈 제거 뭉개짐·움직임 블러·가로등 번짐) ③ CLIP → OSNet 증류(공개 데모·CPU) ④ HF Space 반영 ⑤ 발표 자료(11/18).
+- 목격자 진술: 최종 모델에서 Low 효과 없음, Extreme +0.5~3.6 → 보조 기능으로 유지, 데모 "매우 강하게" 제거(`results/witness_eval.csv`).
+- 발표 참고 문헌: `docs/REFERENCES.md`. WACV 2026 Khan et al. 논문 제목이 이 프로젝트와 같음 → 발표에서 구분.
