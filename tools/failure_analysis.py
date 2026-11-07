@@ -34,6 +34,7 @@ CAUSES = ["distractor", "hub", "similar", "other"]
 
 
 BASE, FT, FTM, CLIP = "osnet_x1_0", "osnet_x1_0-ft", "osnet_x1_0-ftmsmt24", "clip_vit_b16-ftpair"
+CLIPN = "clip_vit_b16-ftnight"  # 최종 (+ Night600 train)
 
 
 def feats(level, split, feat, prefix=BASE):
@@ -51,7 +52,7 @@ def main():
     rows = []
     for setting, feat, beta, pf in [("OSNet", "none", 0.0, BASE), ("AdaBN+CSLS", "adabn", 1.0, BASE),
                                     ("FT+CSLS", "none", 1.0, FT), ("FTM+CSLS", "none", 1.0, FTM),
-                                    ("CLIP+CSLS", "none", 1.0, CLIP)]:
+                                    ("CLIP+CSLS", "none", 1.0, CLIP), ("CLIPN+CSLS", "none", 1.0, CLIPN)]:
         for ql in ["normal", "low", "extreme"]:
             qi = list_split(DATA, ql, "query")
             qp = torch.tensor([q.pid for q in qi], device=DEV)

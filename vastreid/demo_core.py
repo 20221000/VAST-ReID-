@@ -30,15 +30,17 @@ PERSONS = {int(k): v for k, v in json.loads(
 N_SAMPLES = 24
 BASE, FT, FTM = "osnet_x1_0", "osnet_x1_0-ft", "osnet_x1_0-ftmsmt24"  # 특징 캐시 이름 (OSNet 최종: 12 + 12 에폭)
 CLIP = "clip_vit_b16-ftpair"  # CLIP ViT-B/16 + 짝 + triplet (tools/finetune.py --arch clip_vit_b16)
-# 백본: clip CLIP ViT-B/16(최종, 데모 기본) / ftm OSNet Market + MSMT17 / ft OSNet Market 저조도 미세조정 / base 사전학습
-BACKBONES = {"clip": CLIP, "base": BASE, "ft": FT, "ftm": FTM}
-DEFAULT_BACKBONE = "clip"
-BACKBONE_LABEL = {"clip": "최종 CLIP ViT-B/16 (Market + MSMT17)", "base": "사전학습 OSNet", "ft": "미세조정 OSNet (Market)",
-                  "ftm": "OSNet (Market + MSMT17)"}
-TRAINED_MSMT = (FTM, CLIP)  # MSMT17 train으로도 학습한 백본
+CLIPN = "clip_vit_b16-ftnight"  # 위 모델 + Night600 train(실제 야간 300명) 12 에폭 추가 (tools/finetune.py --night)
+# 백본: clipn 최종(데모 기본) / clip CLIP 합성만 / ftm OSNet Market + MSMT17 / ft OSNet Market 저조도 미세조정 / base 사전학습
+BACKBONES = {"clipn": CLIPN, "clip": CLIP, "base": BASE, "ft": FT, "ftm": FTM}
+DEFAULT_BACKBONE = "clipn"
+BACKBONE_LABEL = {"clipn": "최종 CLIP ViT-B/16 (Market + MSMT17 + Night600)", "clip": "CLIP ViT-B/16 (Market + MSMT17)",
+                  "base": "사전학습 OSNet", "ft": "미세조정 OSNet (Market)", "ftm": "OSNet (Market + MSMT17)"}
+TRAINED_MSMT = (FTM, CLIP, CLIPN)  # MSMT17 train으로도 학습한 백본
 ATTR_STRENGTH = {"strong": 0.3, "max": 0.9}
 # 갤러리 속성 예측: 미세조정 백본은 CLIP + 미세조정 OSNet 특징 결합 분류기 (tools/attr_probe.py --src clip+osnet-ft)
-ATTR_PROBE = {BASE: "probe", FT: "probe-clip+osnet-ft", FTM: "probe-clip+osnet-ft", CLIP: "probe-clip+osnet-ft"}  # λ (속성 하나당 가중치 = λ/6 → 0.05, 0.15)
+ATTR_PROBE = {BASE: "probe", FT: "probe-clip+osnet-ft", FTM: "probe-clip+osnet-ft", CLIP: "probe-clip+osnet-ft",
+              CLIPN: "probe-clip+osnet-ft"}  # λ (속성 하나당 가중치 = λ/6 → 0.05, 0.15)
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -375,9 +377,10 @@ def _agreement(choices: dict, gp: dict) -> np.ndarray | None:
 _HUB_CSV = {(BASE, "none"): "hubness_wide.csv", (BASE, "adabn"): "hubness_adabn.csv",
             (FT, "none"): "hubness_ft_pft.csv", (FT, "adabn"): "hubness_ft_adabn_pft.csv",
             (FTM, "none"): "hubness_ftmsmt24.csv", (FTM, "adabn"): "hubness_ftmsmt24_adabn.csv",
-            (CLIP, "none"): "hubness_clippair.csv", (CLIP, "adabn"): "hubness_clippair_adabn.csv"}
+            (CLIP, "none"): "hubness_clippair.csv", (CLIP, "adabn"): "hubness_clippair_adabn.csv",
+            (CLIPN, "none"): "hubness_clipnight.csv", (CLIPN, "adabn"): "hubness_clipnight_adabn.csv"}
 _KR_CSV = {BASE: "kreciprocal.csv", FT: "kreciprocal_ft_pft.csv", FTM: "kreciprocal_ftmsmt24.csv",
-           CLIP: "kreciprocal_clippair.csv"}
+           CLIP: "kreciprocal_clippair.csv", CLIPN: "kreciprocal_clipnight.csv"}
 
 
 @lru_cache(maxsize=None)
@@ -630,7 +633,8 @@ def bench() -> dict:
     enh2, krc = _csv("enhance_v2.csv"), _csv("kreciprocal.csv")
     ft, krf = _csv("finetune.csv"), _csv("kreciprocal_ft_pft.csv")  # Market만 미세조정 (결합 속성 분류기)
     ftm, krm = _csv("finetune_msmt24.csv"), _csv("kreciprocal_ftmsmt24.csv")  # OSNet 최종 (Market + MSMT17, 24 에폭)
-    ftc, krcl = _csv("finetune_clip_pair.csv"), _csv("kreciprocal_clippair.csv")  # 최종 모델 (CLIP ViT-B/16)
+    ftc, krcl = _csv("finetune_clip_pair.csv"), _csv("kreciprocal_clippair.csv")  # CLIP ViT-B/16 (합성만)
+    ftn, krn = _csv("finetune_clip_night.csv"), _csv("kreciprocal_clipnight.csv")  # 최종 모델 (+ Night600 train)
 
     def triple(rows, method, extra=None):
         out = {}
@@ -672,11 +676,17 @@ def bench() -> dict:
         rows.append({"name": "OSNet 미세조정 + CSLS + 재순위화 + 목격자 속성",
                      **triple(krm, "kr+csls+witness-probe", {"feat": "none"})})
     if ftc:
-        rows.append({"name": "최종 모델 (CLIP ViT-B/16 미세조정)", **triple(ftc, "cosine", {"feat": "none"}),
+        rows.append({"name": "CLIP ViT-B/16 미세조정", **triple(ftc, "cosine", {"feat": "none"}),
                      "note": "짝 일관성 + triplet 12 에폭 · 처음 보는 조명에 강함"})
     if krcl:
+        rows.append({"name": "CLIP + CSLS + 재순위화 + 목격자 속성",
+                     **triple(krcl, "kr+csls+witness-probe", {"feat": "none"})})
+    if ftn:
+        rows.append({"name": "최종 모델 (CLIP + Night600 실제 야간)", **triple(ftn, "cosine", {"feat": "none"}),
+                     "note": "Night600 train 300명 12 에폭 추가 · 실제 야간 Rank-1 9.8 → 22.8"})
+    if krn:
         rows.append({"name": "최종 모델 + CSLS + 재순위화 + 목격자 속성",
-                     **triple(krcl, "kr+csls+witness-probe", {"feat": "none"}), "note": "데모 기본"})
+                     **triple(krn, "kr+csls+witness-probe", {"feat": "none"}), "note": "데모 기본"})
     b_n = _pick(base, protocol="same", query_level="normal")
     b_e = _pick(base, protocol="cross", query_level="extreme")
     z_l = _pick(enh2, enhance="zerodce", denoise="none", protocol="cross", query_level="low")
@@ -688,7 +698,7 @@ def bench() -> dict:
         if cand and (not best or float(cand["rank1"]) > float(best["rank1"])):
             best = cand
     c_e = _pick(wide, method="cosine", protocol="cross", query_level="extreme")
-    final = krcl or krm or krf  # 카드는 데모 기본(최종 모델) 기준
+    final = krn or krcl or krm or krf  # 카드는 데모 기본(최종 모델) 기준
     best_e = _pick(final, feat="none", method="kr+csls+witness-probe", protocol="cross", query_level="extreme")
     best = _pick(final, feat="none", method="kr+csls+witness-probe", protocol="cross", query_level="low") or best
     cards = {

@@ -923,3 +923,36 @@
 - `finetune.py --night`: Night600 train 300명(14,462장)을 라벨 추가(실제 야간이라 합성 안 함, 짝은 같은 사진 두 장). `--init`의 분류기 크기가 다르면 기존 행만 복사.
   계획: CLIP 12 에폭 모델에서 lr 7e-6로 12 에폭(24 에폭 이어 학습과 같은 조건 + Night600만 차이) → 약 50분.
 - CLIP 24 에폭 이어 학습은 2 에폭에서 시간 관계로 중단(가중치 저장 전이라 남은 파일 없음).
+
+
+### 11/7 — CLIP 이어 학습, 실제 야간 사진 학습(Night600 train), 데모 기본 교체
+
+**CLIP 24 에폭** (`--init clip_vit_b16_vast_lowlight_ft_pair.pth --lr 7e-6`, 12 에폭 38분, GPU 60~63°C, `results/finetune_clip_pair24.csv`)
+- 시작 시점 분류 정확도 99.3%(가중치 매핑 확인). 학습 정확도는 98.3 → 99.7%로 이미 포화.
+- Market: Normal 94.4 → 93.9, Low→Normal 92.7 → 92.3, Extreme→Normal 77.2 → 77.5(mAP 64.3 → 64.1). 처음 보는 노이즈 66.4 → 67.3, 색 조명 88.0 → 86.8, MSMT17 81.2 → 80.5, Night600 9.8 → 9.1.
+- 결론: ±1 안의 오르내림이라 개선 아님. 12 에폭에서 이미 합성 데이터에 맞춰졌고, 더 학습해도 실제 야간에는 도움이 안 됨.
+
+**노이즈 다양화 일반화** (`clip_vit_b16_vast_lowlight_ft_noise.pth`, 11/4 학습)
+- 처음 보는 노이즈 66.4 → 67.5, 색 조명 88.0 → 87.8, MSMT17 81.2 → 81.0(Extreme 54.3 → 52.8), Night600 9.8 → 10.0 → 개선이라 보기 어려움.
+
+**실제 야간 사진 학습: Night600 train 300명** (`--night`, 12 에폭 47분, GPU 58~63°C)
+- 24 에폭 이어 학습과 같은 조건(CLIP 12 에폭에서 lr 7e-6, 12 에폭)에 Night600 train 14,462장만 추가. 2,092명 분류(새 300명 분류기 행은 새로 초기화 → 시작 정확도 84.8%), 에폭당 18만 장, 236초.
+- 실제 야간 사진은 저조도 합성을 하지 않음, 짝 손실은 같은 사진 두 장(일관성 0, 분류·triplet만).
+- `--extract-only`는 `--init`이 아니라 `--out` 경로를 읽음 → 처음에 OSNet 기본 경로를 읽어 실패, `--out`으로 다시 실행.
+- **Night600 (test 300명, train과 다른 사람)**: Rank-1 9.8 → **22.8**, Rank-5 18.9 → 38.3, mAP 3.2 → 10.7, 재순위화 + CSLS mAP 4.2 → **15.1**.
+  논문(IDF) Night600 학습 결과 BoT 11.2 / AGW 12.5 / TransReID 16.0 / IDF 17.2(mAP 9.2)보다 높음. 다만 학습 데이터(Market·MSMT17 추가)·백본이 달라 같은 조건 비교는 아님.
+- **합성 시험도 유지·개선**: Market Extreme 77.2 → 78.0(mAP 64.3 → 64.4), 처음 보는 노이즈 66.4 → 68.4, 색 조명 88.0 → 87.8, 조합 Extreme 84.4 → **85.2**(mAP 84.3 → 84.0), Low 94.2 → 93.8.
+- 대가: MSMT17 Normal 81.2 → 79.8, Low 74.5 → 73.5, Extreme 54.3 → 54.2.
+- 해석: zero-shot 분석에서 본 "합성(거친 입자) vs 실제(노이즈 제거로 뭉개짐)" 차이를 실제 사진 300명이 상당 부분 메움. 합성을 더 학습하거나 노이즈 종류를 늘리는 것으로는 안 됐음.
+- 주의: Night600 test와 **같은 카메라 8대**로 학습 → 처음 보는 야간 카메라에서는 낮을 수 있음. NightReID 등 다른 실제 야간 데이터 검증이 필요.
+
+**데모 기본 백본 교체: `clipn` (clip_vit_b16-ftnight)**
+- `demo_core.CLIPN`, `BACKBONES["clipn"]`, `DEFAULT_BACKBONE = "clipn"`, `TRAINED_MSMT`에 추가. 기존 CLIP은 "합성 저조도만" 선택지로 유지.
+- 캐시: `hubness.py`·`kreciprocal.py --prefix clip_vit_b16-ftnight`(`results/{hubness_clipnight,hubness_clipnight_adabn,kreciprocal_clipnight}.csv`), `build_demo_cache.py`, `failure_analysis.py`(CLIPN+CSLS 행), `build_demo_msmt.py`, `build_demo_night.py`.
+- 실패 원인: Rank-1 오답 Low 282 → 287, Extreme 819 → 796.
+- 브라우저 확인: 기본 백본 표시 정상. Market 극저조도 샘플 24개 중 18개 Rank-1(재순위화), MSMT17 무작위 8명 중 7명, Night600 무작위 8명 중 2명.
+- `index.html` 캐시 버전 `?v=clipn`.
+
+**가중치 배포**
+- Release `weights-v1`에 `clip_vit_b16_vast_lowlight_ft_night.pth`(최종, 349MB)·`clip_vit_b16_vast_lowlight_ft_pair_24.pth` 추가 → 총 11개(CLIP 4, OSNet 7).
+- gh 토큰이 만료돼 처음 업로드는 HTTP 400(파일 이름만 보면 요청 오류처럼 보임) → `gh auth status`로 확인, 재로그인 후 업로드.

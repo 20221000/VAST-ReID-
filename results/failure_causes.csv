@@ -59,3 +59,15 @@ CLIP+CSLS,extreme,normal,distractor,196,0.2393,819,3368,33
 CLIP+CSLS,extreme,normal,hub,0,0.0,819,3368,33
 CLIP+CSLS,extreme,normal,similar,141,0.1722,819,3368,33
 CLIP+CSLS,extreme,normal,other,482,0.5885,819,3368,33
+CLIPN+CSLS,normal,normal,distractor,49,0.2207,222,3368,33
+CLIPN+CSLS,normal,normal,hub,0,0.0,222,3368,33
+CLIPN+CSLS,normal,normal,similar,74,0.3333,222,3368,33
+CLIPN+CSLS,normal,normal,other,99,0.4459,222,3368,33
+CLIPN+CSLS,low,normal,distractor,54,0.1882,287,3368,33
+CLIPN+CSLS,low,normal,hub,0,0.0,287,3368,33
+CLIPN+CSLS,low,normal,similar,86,0.2997,287,3368,33
+CLIPN+CSLS,low,normal,other,147,0.5122,287,3368,33
+CLIPN+CSLS,extreme,normal,distractor,183,0.2299,796,3368,33
+CLIPN+CSLS,extreme,normal,hub,0,0.0,796,3368,33
+CLIPN+CSLS,extreme,normal,similar,144,0.1809,796,3368,33
+CLIPN+CSLS,extreme,normal,other,469,0.5892,796,3368,33

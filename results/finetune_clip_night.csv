@@ -1,0 +1,11 @@
+model,feat,method,protocol,query_level,gallery_level,rank1,rank5,rank10,mAP,mINP,num_valid_query
+clip_vit_b16-ftnight,none,cosine,same,normal,normal,0.941508,0.97981,0.988717,0.847541,0.595524,3368
+clip_vit_b16-ftnight,none,cosine,same,low,low,0.921318,0.970012,0.981295,0.787277,0.478941,3368
+clip_vit_b16-ftnight,none,cosine,cross,low,normal,0.924584,0.974762,0.985451,0.816201,0.548418,3368
+clip_vit_b16-ftnight,none,cosine,same,extreme,extreme,0.731888,0.879751,0.920131,0.506093,0.161694,3368
+clip_vit_b16-ftnight,none,cosine,cross,extreme,normal,0.779988,0.892221,0.926069,0.644309,0.374904,3368
+clip_vit_b16-ftnight,adabn,cosine,same,normal,normal,0.941508,0.97981,0.988717,0.847541,0.595524,3368
+clip_vit_b16-ftnight,adabn,cosine,same,low,low,0.919834,0.970606,0.981295,0.787092,0.479098,3368
+clip_vit_b16-ftnight,adabn,cosine,cross,low,normal,0.921318,0.974762,0.985748,0.816495,0.549669,3368
+clip_vit_b16-ftnight,adabn,cosine,same,extreme,extreme,0.728029,0.880641,0.921318,0.505923,0.162083,3368
+clip_vit_b16-ftnight,adabn,cosine,cross,extreme,normal,0.779394,0.893705,0.926663,0.644561,0.375781,3368

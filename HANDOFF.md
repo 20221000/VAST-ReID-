@@ -464,3 +464,11 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
   2. Night600 train 추가: 위와 같은 설정에 `--night --no-extract --out weights/clip_vit_b16_vast_lowlight_ft_night.pth` (약 50분) → `--extract-only --prefix clip_vit_b16-ftnight --csv results/finetune_clip_night.csv`
   3. 새 모델 3개(noise, pair24, night) 일반화 비교: `eval_shift.py`, `eval_msmt.py`, `eval_night.py`(모델 등록 완료)
 - 노이즈 다양화 가중치는 Release `weights-v1`에 추가함(11/4). 새 가중치도 같은 Release에 `gh release upload weights-v1 <파일>`로 추가.
+
+### 다음 세션 시작점 (11/7)
+- 데모 기본 = **최종 모델 `clipn`**(`clip_vit_b16-ftnight`, `weights/clip_vit_b16_vast_lowlight_ft_night.pth`): CLIP 12 에폭 + Night600 train 300명 12 에폭.
+  Night600 실제 야간 22.8 / 10.7(재순위화 mAP 15.1), Market 조합 Extreme 85.2 / 84.0, Low 93.8 / 91.4, MSMT17 79.8 / 57.9.
+- 해 봤지만 효과 없음: CLIP 24 에폭(`ftpair24`), 노이즈 종류 다양화(`ftnoise`), 좌우 반전 TTA, CLIP-ReID 속성 분류기.
+- Release `weights-v1` 가중치 11개(CLIP 4, OSNet 7). 업로드 실패(HTTP 400) 시 먼저 `gh auth status`로 토큰 만료 확인.
+- 다음 후보: ① 다른 실제 야간 데이터로 검증(NightReID 동의서) — Night600과 같은 카메라로 학습했으므로 처음 보는 카메라 성능 확인 필요
+  ② 합성을 실제 카메라처럼(노이즈 제거 뭉개짐·움직임 블러·가로등 번짐) ③ CLIP → OSNet 증류(공개 데모·CPU) ④ HF Space 반영 ⑤ 발표 자료(11/18).

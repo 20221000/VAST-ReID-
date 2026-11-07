@@ -26,3 +26,12 @@ model,query_level,gallery_level,rank1,rank5,mAP,mINP,num_valid_query
 CLIP ViT-B/16 짝 + triplet (12 에폭)*,normal,normal,0.811819,0.902908,0.599041,0.175776,11659
 CLIP ViT-B/16 짝 + triplet (12 에폭)*,low,normal,0.744747,0.849901,0.53345,0.149443,11659
 CLIP ViT-B/16 짝 + triplet (12 에폭)*,extreme,normal,0.543186,0.673557,0.372366,0.093414,11659
+CLIP ViT-B/16 + 노이즈 종류 다양화 (12 에폭)*,normal,normal,0.810018,0.901021,0.59338,0.172581,11659
+CLIP ViT-B/16 + 노이즈 종류 다양화 (12 에폭)*,low,normal,0.733168,0.846556,0.524092,0.146818,11659
+CLIP ViT-B/16 + 노이즈 종류 다양화 (12 에폭)*,extreme,normal,0.528261,0.66721,0.361935,0.091713,11659
+CLIP ViT-B/16 짝 + triplet (24 에폭)*,normal,normal,0.805301,0.895531,0.585674,0.165514,11659
+CLIP ViT-B/16 짝 + triplet (24 에폭)*,low,normal,0.733425,0.844755,0.521687,0.141175,11659
+CLIP ViT-B/16 짝 + triplet (24 에폭)*,extreme,normal,0.535638,0.67004,0.365669,0.089975,11659
+CLIP ViT-B/16 + Night600 train (24 에폭)*,normal,normal,0.797667,0.893816,0.579402,0.161542,11659
+CLIP ViT-B/16 + Night600 train (24 에폭)*,low,normal,0.734626,0.845441,0.519753,0.138042,11659
+CLIP ViT-B/16 + Night600 train (24 에폭)*,extreme,normal,0.541556,0.672871,0.366889,0.088703,11659

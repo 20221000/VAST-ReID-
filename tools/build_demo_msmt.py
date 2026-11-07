@@ -32,7 +32,8 @@ from vastreid.reid import extract, gpu_temp, load_model  # noqa: E402
 DEV = "cuda"
 WEIGHTS = {core.BASE: "weights/osnet_x1_0_market1501.pth", core.FT: "weights/osnet_x1_0_vast_lowlight_ft.pth",
            core.FTM: "weights/osnet_x1_0_vast_lowlight_ft_online_msmt_24.pth",
-           core.CLIP: "weights/clip_vit_b16_vast_lowlight_ft_pair.pth"}
+           core.CLIP: "weights/clip_vit_b16_vast_lowlight_ft_pair.pth",
+           core.CLIPN: "weights/clip_vit_b16_vast_lowlight_ft_night.pth"}
 N_REF = 3000
 
 
