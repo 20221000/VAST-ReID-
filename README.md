@@ -10,7 +10,7 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 ![low-light grid](docs/figures/lowlight_grid.jpg)
 
 ## 핵심 결과 (요약)
-> 모든 수치는 실제 실행 결과이며 `results/*.csv`에 있습니다. OSNet(Market-1501 사전학습) 추론에서 시작해, 학습 없는 보정 → 저조도 미세조정 → MSMT17 추가 학습 → 짝 일관성 + triplet → 백본 교체(CLIP ViT-B/16) 순으로 개선했습니다.
+> 모든 수치는 실제 실행 결과이며 `results/*.csv`에 있습니다. OSNet(Market-1501 사전학습) 추론에서 시작해, 학습 없는 보정 → 저조도 미세조정 → MSMT17 추가 학습 → 짝 일관성 + triplet → 백본 교체(CLIP ViT-B/16) → 실제 야간 사진 추가 학습(Night600) 순으로 개선했습니다.
 > 아래 표는 Low 쿼리 → 주간 gallery 기준이며, 극저조도(Extreme) 진행은 바로 아래 표에 있습니다.
 
 | 조건 | Rank-1 | mAP |
@@ -29,7 +29,8 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 | + 미세조정 + k-reciprocal + CSLS + 속성 | 92.8 | 89.1 |
 | OSNet Market + MSMT17 미세조정(24 에폭) + k-reciprocal + CSLS + 속성 | 90.8 | 85.6 |
 | CLIP ViT-B/16 미세조정 (Market + MSMT17, 짝 일관성 + triplet, 12 에폭) | 92.7 | 82.3 |
-| **최종: CLIP ViT-B/16 미세조정 + k-reciprocal + CSLS + 속성** | **94.2** | **91.8** |
+| CLIP ViT-B/16 미세조정 + k-reciprocal + CSLS + 속성 | **94.2** | **91.8** |
+| **최종: + Night600 실제 야간 300명 추가 학습 + k-reciprocal + CSLS + 속성** | 93.8 | 91.4 |
 
 **극저조도(Extreme) 쿼리 → 주간 gallery, Rank-1 / mAP**
 
@@ -43,6 +44,18 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 | CLIP ViT-B/16 미세조정 (Market + MSMT17, 12 에폭) | 77.2 | 64.3 |
 | CLIP ViT-B/16 미세조정 + k-reciprocal + CSLS + 속성 | 84.4 | **84.3** |
 | **최종: + Night600 실제 야간 300명 추가 학습 + k-reciprocal + CSLS + 속성** | **85.2** | 84.0 |
+
+**실제 야간 CCTV (Night600 test 300명, 야간 query → 야간 gallery), Rank-1 / mAP** — [실제 야간 검증](#실제-야간-검증-night600)
+
+| 모델 | Rank-1 | mAP |
+|---|---|---|
+| 사전학습 OSNet | 2.3 | 0.9 |
+| OSNet 미세조정 (Market + MSMT17, 24 에폭) | 6.3 | 2.3 |
+| CLIP ViT-B/16 미세조정 (합성 저조도만) | 9.8 | 3.2 |
+| **최종: + Night600 train 300명 (test와 다른 사람)** | **22.8** | **10.7** (재순위화 15.1) |
+| 참고: Night600으로 학습한 논문 최고 (IDF, IEEE TMM 2024) | 17.2 | 9.2 |
+
+모두 CSLS 적용. 합성 저조도 표의 높은 점수와 달리 실제 야간은 훨씬 어렵고, 실제 야간 사진을 학습에 넣어야 크게 오릅니다.
 
 ### 정확도를 올린 방법 (순서대로)
 1. **원인 분석**: 어두운 사진의 노이즈를 옷 무늬로 착각해 검색 결과가 몇몇 사진(hub)으로 몰림.

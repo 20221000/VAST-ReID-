@@ -724,7 +724,29 @@ def bench() -> dict:
                                                    "IDF1": round(float(r["IDF1"]) * 100, 1),
                                                    "AssA": round(float(r["AssA"]) * 100, 1),
                                                    "IDSW": int(r["IDSW"])})
-    return {"rows": rows, "cards": cards, "failure": fail, "tracking": trk}
+    # 실제 야간 (Night600 test 300명, results/eval_night.csv). †만 Night600 train(다른 300명)으로 학습
+    night_names = [("osnet_x1_0", "사전학습 OSNet", ""), ("osnet_x1_0-ftmsmt24", "OSNet 미세조정 (Market + MSMT17)", ""),
+                   ("clip_vit_b16-ftpair", "CLIP ViT-B/16 (합성 저조도만)", ""),
+                   ("clip_vit_b16-ftpair24", "CLIP + 12 에폭 추가", ""),
+                   ("clip_vit_b16-ftnoise", "CLIP + 노이즈 종류 다양화", ""),
+                   ("clip_vit_b16-ftnight", "최종: CLIP + Night600 train", "데모 기본")]
+    nr = _csv("eval_night.csv")
+    night = []
+    for pf, name, note in night_names:
+        c, k = _pick(nr, prefix=pf, method="csls"), _pick(nr, prefix=pf, method="kr+csls")
+        if c:
+            night.append({"name": name, "note": note, "train": pf == "clip_vit_b16-ftnight",
+                          "rank1": round(float(c["rank1"]) * 100, 1), "rank5": round(float(c["rank5"]) * 100, 1),
+                          "mAP": round(float(c["mAP"]) * 100, 1),
+                          "mAP_kr": None if not k else round(float(k["mAP"]) * 100, 1)})
+    # 참고: Night600 논문(IDF, IEEE TMM 2024) Table II, Night600 train으로 학습한 결과
+    night_ref = [{"name": "BoT", "rank1": 11.2, "mAP": 5.4}, {"name": "AGW", "rank1": 12.5, "mAP": 6.1},
+                 {"name": "TransReID", "rank1": 16.0, "mAP": 8.4}, {"name": "IDF", "rank1": 17.2, "mAP": 9.2}]
+    if night:
+        z = next((r for r in night if r["name"].startswith("CLIP ViT")), None)
+        fin = next((r for r in night if r["train"]), None)
+        cards["night"] = {"zero": z and z["rank1"], "final": fin and fin["rank1"], "final_map": fin and fin["mAP"]}
+    return {"rows": rows, "cards": cards, "failure": fail, "tracking": trk, "night": night, "night_ref": night_ref}
 
 
 # ------------------------------------------------------------------ 트래킹 프레임

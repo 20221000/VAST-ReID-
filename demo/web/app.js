@@ -259,8 +259,22 @@ async function loadBench() {
     <div class="kpi"><span>데이터셋 규모</span><span class="mono v">${c.dataset.persons.toLocaleString()}명 · ${c.dataset.images.toLocaleString()}장</span><small>× 조도 ${c.dataset.levels}단계 (Market-1501 합성)</small></div>
     <div class="kpi"><span>Normal → Extreme 하락폭</span><span class="mono v" style="color:var(--ng)">${sign(c.drop)}</span><small>Rank-1 · 극저조도 쿼리 → 주간 gallery</small></div>
     <div class="kpi"><span>저조도 개선 효과 (Zero-DCE)</span><span class="mono v" style="color:var(--ng)">${sign(c.zerodce_low)}</span><small>Rank-1 · Low 쿼리 → 주간, 오히려 하락</small></div>
+    ${c.night ? `<div class="kpi"><span>실제 야간 (Night600)</span><span class="mono v">${fmt(c.night.final)}</span><small>Rank-1 · 합성만 학습 ${fmt(c.night.zero)} → 실제 야간 300명 추가</small></div>` : ""}
     <div class="kpi dark"><span>제안 방법 효과 (최고 조합)</span><span class="mono v">${sign(c.best_gain_ext ?? c.best_gain)}</span><small>${c.best_gain_ext != null ? `Extreme 쿼리 → 주간 Rank-1 ${fmt(c.best_value_ext)} · Low ${fmt(c.best_value)}` : `Low 쿼리 → 주간 Rank-1 ${fmt(c.best_value)}`}</small></div>`;
-  renderBars(); renderFail(); renderTrack();
+  renderBars(); renderFail(); renderTrack(); renderNight();
+}
+
+function renderNight() {
+  const m = B.metric, rows = BENCH.night || [], ref = BENCH.night_ref || [];
+  const box = $("#night-rows");
+  if (!box) return;
+  $("#n-name").textContent = m === "rank1" ? "Rank-1" : "mAP";
+  const bar = (v, cls) => `<div class="bar"><div class="${cls}" style="width:${v == null ? 0 : v * 2.8}%"></div><span class="mono">${fmt(v)}</span></div>`;
+  box.innerHTML = rows.map((r) => `
+    <div class="mrow"><span class="n">${esc(r.name)}${r.train ? " †" : ""}${r.note ? `<small>${esc(r.note)}</small>` : ""}</span>
+      <div class="b">${bar(r[m], r.train ? "c2" : "c1")}</div></div>`).join("") +
+    `<div class="mrow"><span class="n">참고: 논문 (Night600 train 학습)<small>${ref.map((r) => esc(r.name)).join(" · ")}</small></span>
+      <div class="b"><div class="bar"><div class="c0" style="width:${Math.max(...ref.map((r) => r[m])) * 2.8}%"></div><span class="mono">${ref.map((r) => r[m].toFixed(1)).join(" / ")}</span></div></div></div>`;
 }
 
 function renderBars() {
@@ -293,7 +307,7 @@ function renderTrack() {
 
 function initBench() {
   $$(".mtoggle button").forEach((b) => b.addEventListener("click", () => {
-    B.metric = b.dataset.metric; $$(".mtoggle button").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); renderBars();
+    B.metric = b.dataset.metric; $$(".mtoggle button").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); renderBars(); renderNight();
   }));
   const group = (attr, key, fn) => $$(`[data-${attr}]`).forEach((b) => b.addEventListener("click", () => {
     B[key] = b.dataset[attr]; $$(`[data-${attr}]`).forEach((x) => x.setAttribute("aria-pressed", String(x === b))); fn();

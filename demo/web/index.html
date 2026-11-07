@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VAST-ReID 데모</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
-<link rel="stylesheet" href="/web/style.css?v=clipn">
+<link rel="stylesheet" href="/web/style.css?v=bench3">
 </head>
 <body>
 <header>
@@ -181,7 +181,7 @@
     <div class="bhead">
       <div style="display:flex;flex-direction:column;gap:8px">
         <h1>조도별 성능 벤치마크</h1>
-        <span class="real">results/*.csv 실제 실행 결과 · OSNet·CLIP ViT-B/16 + 저조도 미세조정</span>
+        <span class="real">results/*.csv 실제 실행 결과 · OSNet·CLIP ViT-B/16 + 저조도 미세조정 · 실제 야간 Night600 검증</span>
       </div>
       <div class="mtoggle" role="group" aria-label="지표 선택">
         <button type="button" data-metric="rank1" aria-pressed="true">Rank-1</button>
@@ -197,6 +197,11 @@
         </div>
         <div id="m-rows"></div>
         <p class="foot">Normal은 밝은 쿼리 → 밝은 gallery, Low·Extreme은 어두운 쿼리 → 주간 gallery(야간 CCTV로 주간 기록 검색). 코사인 유사도 기준이며 Zero-DCE 행만 유클리드 거리입니다. λ·β는 train 검증 분할에서 선택했습니다. 미세조정 행은 train 이미지로 추가 학습한 모델(MSMT17 train 1,041명 추가 행은 매번 새로 합성한 저조도, 최종 모델은 CLIP ViT-B/16 백본 + 짝 일관성 + triplet + Night600 실제 야간 train 300명)이며, 미세조정 모델에는 AdaBN이 해로워 쓰지 않았습니다.</p>
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;margin-top:28px">
+          <h2>실제 야간 검증 · Night600 <span id="n-name">Rank-1</span> <small style="font-weight:400;color:var(--sub);font-size:13px">(야간 query → 야간 gallery, CSLS)</small></h2>
+        </div>
+        <div id="night-rows"></div>
+        <p class="foot">위 막대는 모두 합성 저조도입니다. Night600(IDF, IEEE TMM 2024)은 실제 야간 CCTV 8대, test 300명(query 2,180장 / gallery 14,351장)입니다. † 최종 모델만 Night600 train 300명(test와 다른 사람, 같은 카메라)으로 학습했고 나머지는 Night600을 보지 않은 zero-shot입니다. 논문 결과는 학습 데이터·백본이 달라 참고용입니다 (results/eval_night.csv).</p>
       </section>
       <aside class="side">
         <section class="panel">
@@ -230,6 +235,6 @@
   </div>
 </section>
 
-<script src="/web/app.js?v=clipn"></script>
+<script src="/web/app.js?v=bench3"></script>
 </body>
 </html>
