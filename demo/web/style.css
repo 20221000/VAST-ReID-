@@ -33,7 +33,7 @@ nav a.on { background: #fff; color: var(--text); font-weight: 600; box-shadow: 0
 .btn:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, .card:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
 
 /* 이미지 검색: aside */
-aside.controls { flex: 1 1 280px; max-width: 330px; display: flex; flex-direction: column; gap: 24px; align-self: flex-start; }
+aside.controls { flex: 1 1 280px; max-width: 330px; min-width: 0; display: flex; flex-direction: column; gap: 24px; align-self: flex-start; }
 .qrow { display: flex; gap: 14px; align-items: stretch; }
 .qthumb { width: 92px; height: 168px; border-radius: 12px; background: var(--photo); overflow: hidden; outline: 3px solid var(--amber); outline-offset: 2px; flex: none; }
 .qthumb img, .photo img { width: 100%; height: 100%; object-fit: contain; display: block; }
@@ -171,7 +171,14 @@ table.trk th:first-child, table.trk td:first-child { text-align: left; }
   aside.controls, aside.detail, .side { max-width: none; }
   .grid5, .grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cards4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cards4 .kpi.dark { grid-column: span 2; }
+  .picker { grid-template-columns: repeat(4, minmax(0, 1fr)); }  /* 휴대폰: 인물 선택 사진을 한 줄 4장 */  /* 카드 5개: 마지막(핵심) 카드를 한 줄 전체로 */
   .mrow .n { flex-basis: 100%; }
+}
+
+/* 설정 패널과 결과가 두 줄로 나뉘는 폭(약 900~1040px): 설정 패널을 전체 폭으로 펼쳐 오른쪽 빈칸 방지 */
+@media (max-width: 1040px) {
+  aside.controls { max-width: none; }
 }
 
 /* 생성형 AI 설명 */

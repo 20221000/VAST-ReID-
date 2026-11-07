@@ -314,8 +314,11 @@ def _night_arr(key: str) -> np.ndarray:
 
 def night_search(qidx: int, backbone: str = DEFAULT_BACKBONE, csls: bool = True, adabn: bool = False,
                  kr: bool = False, attrs: dict | None = None) -> dict:
-    """Night600 query → Night600 gallery(14,351장). 쿼리·갤러리 모두 실제 야간 사진이며 어떤 백본도 Night600으로 학습하지 않음."""
-    notes = ["실제 야간 사진(Night600)이라 조도 선택은 적용되지 않습니다 · 어떤 백본도 Night600으로 학습하지 않았습니다"]
+    """Night600 query → Night600 gallery(14,351장). 쿼리·갤러리 모두 실제 야간 사진.
+    최종 백본(CLIPN)만 Night600 train(test와 다른 300명, 같은 카메라)으로 학습했고 나머지는 zero-shot."""
+    notes = ["실제 야간 사진(Night600)이라 조도 선택은 적용되지 않습니다"]
+    notes.append("이 백본은 Night600 train(검색 대상과 다른 300명, 같은 카메라)으로도 학습했습니다"
+                 if BACKBONES.get(backbone) == CLIPN else "이 백본은 Night600을 학습하지 않았습니다 (처음 보는 실제 야간)")
     if night_feats(BACKBONES.get(backbone, ""), "gallery") is None:
         notes.append(f"{BACKBONE_LABEL.get(backbone, backbone)} 특징이 없어 기본 백본으로 검색했습니다")
         backbone = DEFAULT_BACKBONE
@@ -482,7 +485,7 @@ def search(q_level: str, sample: int | None, g_level: str = "normal", adabn: boo
     row = kr_row(q_level, feat, pf, qindex) if kr and src_gallery is None and g_level == "normal" else None
     kp = kr_params(q_level, feat, pf) if kr else None
     if kr and (row is None or kp is None):
-        kr_note = ("재순위화는 최종 모델(AdaBN 끔)의 Market 쿼리 전체와 다른 백본의 기본 샘플 24명에만 미리 계산되어 있어 "
+        kr_note = ("재순위화는 MSMT17로 학습한 백본(AdaBN 끔)의 Market 쿼리 전체와 나머지 백본의 기본 샘플 24명에만 미리 계산되어 있어 "
                    "이번 검색에는 적용하지 않았습니다")
     elif kr:
         d = row  # k-reciprocal 거리 (작을수록 가까움)
