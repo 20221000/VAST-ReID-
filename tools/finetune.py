@@ -60,9 +60,9 @@ class TrainDS(torch.utils.data.Dataset):
     online=True : normal 원본만 읽고, 인덱스 구간에 따라 1/3씩 normal·low·extreme으로 **매번 새로 합성**
                   (노출·노이즈·블러·색·JPEG를 configs/lowlight.yaml 범위에서 새로 뽑음 → 같은 저조도 사진이 반복되지 않음)."""
 
-    def __init__(self, items, labels, online_levels=None, cfg=None, noise_aug=False):
+    def __init__(self, items, labels, online_levels=None, cfg=None, noise_aug=False, cam_aug=False):
         self.items, self.labels, self.online_levels, self.cfg = items, labels, online_levels, cfg
-        self.noise_aug = noise_aug
+        self.noise_aug, self.cam_aug = noise_aug, cam_aug
 
     @staticmethod
     def _extra_noise(img, rng):
@@ -82,6 +82,39 @@ class TrainDS(torch.utils.data.Dataset):
             x = cv2.bilateralFilter(x, 5, float(rng.uniform(20, 50)), 3)
         return x
 
+    @staticmethod
+    def _camera_isp(img, rng):
+        """--cam-aug: 실제 야간 CCTV 카메라 처리 흉내 (Night600 분석 결과에 맞춤, uint8 sRGB).
+        Night600은 입자 노이즈가 주간보다도 적고(카메라가 지움) 더 흐리며, 사진이 작고(중앙값 133×48), 채도가 높음(HSV S 77 vs Market 38).
+        각 단계는 확률적으로 적용. 합성 노이즈 세기·JPEG 범위는 그대로(eval_shift.py 설정과 겹치지 않음)."""
+        h, w = img.shape[:2]
+        x = img
+        if rng.random() < 0.8:  # 카메라 노이즈 제거: 입자를 지우면서 디테일도 매끈하게 뭉갬
+            if rng.random() < 0.5:
+                x = cv2.bilateralFilter(x, 9, float(rng.uniform(40, 100)), float(rng.uniform(3, 7)))
+            else:
+                x = cv2.GaussianBlur(x, (0, 0), float(rng.uniform(0.8, 2.0)))
+        if rng.random() < 0.6:  # 작은 사람(원거리·저해상도 센서): 축소 후 확대
+            s = rng.uniform(0.4, 0.8)
+            x = cv2.resize(cv2.resize(x, (max(8, int(w * s)), max(16, int(h * s))), interpolation=cv2.INTER_AREA),
+                           (w, h), interpolation=cv2.INTER_LINEAR)
+        if rng.random() < 0.4:  # 긴 노출 움직임 블러 (임의 방향 직선 커널)
+            k = int(rng.integers(3, 10))
+            kern = np.zeros((k, k), np.float32)
+            kern[k // 2, :] = 1.0
+            rot = cv2.getRotationMatrix2D((k / 2 - 0.5, k / 2 - 0.5), float(rng.uniform(0, 180)), 1.0)
+            kern = cv2.warpAffine(kern, rot, (k, k))
+            x = cv2.filter2D(x, -1, kern / max(float(kern.sum()), 1e-6))
+        if rng.random() < 0.5:  # 가로등 아래 높은 채도·색 번짐
+            hsv = cv2.cvtColor(x, cv2.COLOR_BGR2HSV).astype(np.float32)
+            hsv[..., 1] = np.clip(hsv[..., 1] * rng.uniform(1.3, 2.2), 0, 255)
+            x = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+        if rng.random() < 0.3:  # 가로등·전조등 빛 번짐 (밝은 부분을 크게 흐려 더함)
+            xf = x.astype(np.float32)
+            bright = np.clip(xf - np.percentile(xf, 97), 0, None)
+            x = np.clip(xf + cv2.GaussianBlur(bright, (0, 0), float(rng.uniform(4, 10))) * rng.uniform(1, 3), 0, 255).astype(np.uint8)
+        return x
+
     def __len__(self):
         return len(self.items) * (len(self.online_levels) if self.online_levels else 1)
 
@@ -94,6 +127,8 @@ class TrainDS(torch.utils.data.Dataset):
         img, _ = degrade(img, p, rng)
         if self.noise_aug:
             img = self._extra_noise(img, rng)
+        if self.cam_aug and rng.random() < 0.7:
+            img = self._camera_isp(img, rng)
         ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, p.jpeg_quality])  # 오프라인 합성과 같은 JPEG 저장 효과
         return cv2.imdecode(buf, cv2.IMREAD_COLOR)
 
@@ -140,8 +175,8 @@ class PairDS(TrainDS):
     짝 일관성 손실은 같은 사진의 밝은/어두운 특징을 가깝게 만들어 조도에 불변인 특징을 직접 학습.
     p_extreme: 저조도 쪽이 extreme일 확률 (2/3이면 전체 이미지 중 extreme 1/3 = 기존 온라인 학습과 같은 비율)."""
 
-    def __init__(self, items, labels, cfg, p_extreme=0.5, noise_aug=False):
-        super().__init__(items, labels, None, cfg, noise_aug)
+    def __init__(self, items, labels, cfg, p_extreme=0.5, noise_aug=False, cam_aug=False):
+        super().__init__(items, labels, None, cfg, noise_aug, cam_aug)
         self.p_extreme = p_extreme
 
     def __len__(self):
@@ -258,12 +293,12 @@ def train(args):
     cfg = yaml.safe_load((ROOT / "configs/lowlight.yaml").read_text(encoding="utf-8"))
     if args.pair:  # 에폭당 이미지 수를 기존 온라인 학습(원본 × 3조도)과 같게 맞춤
         assert args.online, "--pair는 --online과 함께"
-        ds = PairDS(items, labels, cfg, args.pair_extreme, args.noise_aug)
+        ds = PairDS(items, labels, cfg, args.pair_extreme, args.noise_aug, args.cam_aug)
         n_batches = len(items) * len(LEVELS) // (2 * args.pk_p * args.pk_k)
         dl = torch.utils.data.DataLoader(ds, batch_sampler=PKSampler(labels, args.pk_p, args.pk_k, n_batches),
                                          num_workers=8, pin_memory=True, persistent_workers=True)
     else:
-        ds = TrainDS(items, labels, LEVELS if args.online else None, cfg, args.noise_aug)
+        ds = TrainDS(items, labels, LEVELS if args.online else None, cfg, args.noise_aug, args.cam_aug)
         dl = torch.utils.data.DataLoader(ds, batch_size=args.batch, shuffle=True, num_workers=8, pin_memory=True,
                                          drop_last=True, persistent_workers=True)
     model = build(n_cls, args.arch)
@@ -277,6 +312,13 @@ def train(args):
             sd[k] = own[k]
         model.load_state_dict(sd, strict=True)
         print(f"[ft] init from {args.init}", flush=True)
+    teacher = None
+    if args.distill:  # 지식 증류: 고정된 선생님(최종 CLIP)의 검색 특징을 학생이 따라 하게 함
+        from vastreid.reid import load_model
+        teacher = load_model(None, args.distill, DEV)
+        for q in teacher.parameters():
+            q.requires_grad_(False)
+        print(f"[ft] distill from {args.distill} (kd-w {args.kd_w})", flush=True)
     acc0 = classifier_acc(model, dl)
     n_img = len(dl) * 2 * args.pk_p * args.pk_k if args.pair else len(ds)
     print(f"[ft] {'online ' if args.online else ''}{'pair ' if args.pair else ''}{n_img} imgs/epoch, {n_cls} ids, "
@@ -295,7 +337,7 @@ def train(args):
     for ep in range(1, args.epochs + 1):
         model.train()
         tl = tc = tn = 0
-        tt = tk = 0.0
+        tt = tk = tkd = 0.0
         te = time.time()
         for x, y in dl:
             x, y = x.to(DEV, non_blocking=True), y.to(DEV, non_blocking=True)
@@ -311,6 +353,13 @@ def train(args):
                     # 어두운 특징을 같은 사진의 밝은 특징 쪽으로 (밝은 쪽은 stop-grad → 주간 성능 유지)
                     cons = (1 - (fn[1::2] * fn[0::2].detach()).sum(1)).mean()
                     loss = crit(out.float(), y) + tri + args.cons_w * cons
+                    if teacher is not None:
+                        with torch.no_grad():
+                            ft = torch.nn.functional.normalize(teacher(x).float(), dim=1)
+                        # ① 특징 자체를 선생님 쪽으로(코사인) ② 배치 안 사람 간 유사도 구조를 선생님과 같게(관계 증류)
+                        kd = (1 - (fn * ft).sum(1)).mean() + 10 * torch.nn.functional.mse_loss(fn @ fn.T, ft @ ft.T)
+                        loss = loss + args.kd_w * kd
+                        tkd += float(kd.detach()) * len(y)
                     tt += float(tri.detach()) * len(y)
                     tk += float(cons.detach()) * len(y)
                 else:
@@ -322,7 +371,7 @@ def train(args):
             tl += float(loss.detach()) * len(y)
             tc += int((out.argmax(1) == y).sum())
             tn += len(y)
-        extra = f"  (triplet {tt/tn:.3f}  consistency {tk/tn:.3f})" if args.pair else ""
+        extra = f"  (triplet {tt/tn:.3f}  consistency {tk/tn:.3f}{f'  distill {tkd/tn:.3f}' if teacher is not None else ''})" if args.pair else ""
         print(f"  epoch {ep:2d}/{args.epochs}  loss {tl/tn:.3f}{extra}  train acc {tc/tn*100:5.1f}%  "
               f"{time.time()-te:.0f}s  GPU {gpu_temp()}°C", flush=True)
     model.eval()
@@ -412,6 +461,9 @@ def main():
     ap.add_argument("--prefix", default=PREFIX, help="특징 캐시 이름")
     ap.add_argument("--flip", action="store_true", help="특징 추출 시 좌우 반전 평균(TTA)")
     ap.add_argument("--noise-aug", action="store_true", help="온라인 합성에 줄무늬·색 얼룩·노이즈 제거 뭉개짐 추가")
+    ap.add_argument("--cam-aug", action="store_true", help="온라인 합성에 실제 야간 카메라 처리(노이즈 제거 뭉개짐·저해상도·움직임 블러·채도·빛 번짐) 추가")
+    ap.add_argument("--distill", type=Path, default=None, help="--pair: 선생님 가중치(예: 최종 CLIP)로 지식 증류")
+    ap.add_argument("--kd-w", type=float, default=1.0, help="증류 손실 가중치")
     ap.add_argument("--csv", type=Path, default=ROOT / "results/finetune.csv")
     args = ap.parse_args()
     random.seed(args.seed)

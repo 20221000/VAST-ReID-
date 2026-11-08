@@ -32,6 +32,7 @@ N_REF = 3000  # eval_night.py와 같은 참조 표본
 GROUPS = {"카메라 5~8 (학습 때 안 본 카메라)": {4, 5, 6, 7}, "카메라 1~4 (학습 때 본 카메라)": {0, 1, 2, 3}}
 MODELS = {"CLIP 합성만 (Night600 학습 없음)": ("clip_vit_b16-ftpair", "weights/clip_vit_b16_vast_lowlight_ft_pair.pth"),
           "CLIP + Night600 train 카메라 1~4만": ("clip_vit_b16-ftnight-c1234", "weights/clip_vit_b16_vast_lowlight_ft_night_c1234.pth"),
+          "카메라 1~4 학습 + 5~8 라벨 없이 적응": ("clip_vit_b16-ftnight-c1234-adapt58", "weights/clip_vit_b16_vast_lowlight_ft_night_c1234_adapt58.pth"),
           "CLIP + Night600 train 카메라 8대 전부 (최종)": ("clip_vit_b16-ftnight", "weights/clip_vit_b16_vast_lowlight_ft_night.pth")}
 
 

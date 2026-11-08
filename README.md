@@ -365,6 +365,50 @@ query 1,130장(카메라 5~8) / 1,050장(카메라 1~4), gallery 6,621장 / 7,73
 - 다른 장소의 야간 데이터는 서로 거의 도움이 되지 않았습니다(카메라 1~4에서 1~4만 학습 19.1 vs 8대 전부 20.1). 실제 적용 시 현장 카메라의 야간 영상으로 추가 학습이 필요합니다.
 - 주의: 그룹당 query 약 1,100장이라 1~2점 차이는 오차 범위입니다. 한 방향(1~4 학습 → 5~8 평가)만 확인했습니다.
 
+### 새 현장 적응: 라벨 없는 현장 사진으로 의사 라벨 학습
+`tools/adapt_site.py`, `results/adapt_site.csv`, 평가는 위와 같은 `tools/eval_night_cams.py`.
+카메라 1~4만 라벨로 학습한 모델을 처음 보는 장소(카메라 5~8)에 설치했다고 가정하고, 그 장소의 **라벨 없는** 야간 사진(Night600 train 카메라 5~8, 6,813장, test와 다른 사람)만으로 적응했습니다.
+영상이 있으면 트래킹으로 같은 사람을 묶을 수 있지만 Night600은 사진만 있어, 특징 유사도로 묶었습니다(클러스터링 기반 비지도 도메인 적응).
+매 라운드 특징 추출 → k-reciprocal Jaccard 거리 → DBSCAN으로 묶음(같은 묶음 = 같은 사람으로 가정) → 묶음 중심으로 분류기를 만들고 분류 + triplet 2에폭. 6라운드, 19분. 하이퍼파라미터는 미리 고정.
+
+| Rank-1 / mAP (CSLS), 괄호는 재순위화 Rank-1 / mAP | 카메라 5~8 (새 장소) | 카메라 1~4 (원래 장소) |
+|---|---|---|
+| 카메라 1~4만 라벨 학습 | 12.1 / 5.4 (12.4 / 6.4) | 19.1 / 9.5 |
+| **+ 카메라 5~8 라벨 없이 적응** | **17.8 / 7.2 (19.0 / 10.1)** | 15.2 / 7.1 |
+| 참고: 카메라 5~8도 라벨로 학습 (상한) | 26.4 / 13.0 (27.2 / 18.2) | 20.1 / 9.5 |
+
+- 라벨 없이 새 장소 Rank-1 **+5.7**(12.1 → 17.8): 라벨 학습과의 격차 중 약 40%를 메움.
+- 원래 장소는 19.1 → 15.2로 떨어짐(새 장소 사진만으로 적응). 실제 적용 시 원래 장소 데이터를 함께 쓰거나 장소별 모델을 둬야 함.
+- 자동으로 묶은 의사 라벨의 순도는 약 33%(묶음 168개, 실제 150명)로 낮지만, 그래도 새 장소의 사진 분포에 맞춰지는 효과가 컸습니다.
+
+### 합성 개선: 실제 야간 카메라처럼 (`--cam-aug`)
+Night600 분석(입자 노이즈가 주간보다 적고 더 흐림, 사진이 작고 채도가 높음)에 맞춰, 합성 저조도 뒤에 카메라 처리를 확률적으로 더했습니다:
+강한 노이즈 제거(bilateral·가우시안), 축소 후 확대(저해상도), 움직임 블러, 채도 증가, 가로등 빛 번짐. CLIP 12 에폭 처음부터(37분), Night600은 학습에 쓰지 않음.
+
+| | Market 주간 | 어두움 → 주간 | 극저조도 → 주간 | Night600 (zero-shot, CSLS) |
+|---|---|---|---|---|
+| CLIP 짝 + triplet (기존 합성) | 94.4 | 92.7 | 77.2 | 9.8 / 3.2 |
+| CLIP + 노이즈 종류 다양화 | 94.2 | 92.6 | 76.2 | 10.0 / 3.0 |
+| CLIP + **카메라 처리 합성** | 94.5 | 92.9 | 76.1 | 9.8 / 3.1 |
+
+- **효과 없음.** 사진을 눈으로 보면 실제 야간에 더 가까워졌지만 실제 야간 정답률은 그대로입니다(`results/finetune_clip_cam.csv`, `results/eval_night.csv`).
+- 노이즈 종류(11/4)와 카메라 처리(11/8) 두 번 모두 효과가 없어, 실제 야간의 어려움은 화질 차이보다 **장소·카메라·사람 분포 차이**에 있다고 봅니다(위 카메라 분할 결과와 같은 결론).
+
+### 경량화: 최종 CLIP → OSNet 지식 증류 (`--distill`)
+최종 CLIP(선생님, 고정)의 검색 특징을 OSNet(학생)이 따라 하게 학습: 기존 손실(분류 + triplet + 짝 일관성)에 ① 학생·선생님 특징 코사인 ② 배치 안 유사도 행렬 차이(관계 증류)를 더함.
+학생은 OSNet 짝 + triplet 24 에폭에서 출발, 선생님과 같은 데이터(Market + MSMT17 + Night600 train) 12 에폭(45분).
+
+| | 파라미터 | 파일 | CPU 1장 | CPU 64장 묶음 장당 | Market 극저조도 → 주간 | Night600 (CSLS) |
+|---|---|---|---|---|---|---|
+| CLIP ViT-B/16 최종 (선생님) | 86.1M | 333MB | 42.7ms | 23.7ms | 78.0 | 22.8 / 10.7 |
+| OSNet 짝 + triplet (기존) | 2.2M | 13MB | — | — | 68.9 | 7.5 / 2.5 |
+| **OSNet 증류 학생** | 2.2M | 13MB | **20.5ms** | **7.0ms** | 68.9 | **12.2 / 5.7** (재순위화 13.1 / 7.5) |
+
+(`results/finetune_distill.csv`, `results/eval_night.csv`, `results/bench_cpu.csv`, `tools/bench_cpu.py`, CPU 16스레드, torch 2.11)
+- 모델 크기 1/40, CPU 갤러리 색인 약 3.4배 빠름. Market 합성 성능은 기존 OSNet과 같고, 실제 야간은 7.5 → 12.2로 올랐지만 선생님(22.8)의 절반 정도입니다.
+- 학생도 Night600 train 라벨로 함께 학습했으므로, Night600 상승이 증류 덕분인지 라벨 덕분인지는 이 실험만으로 구분되지 않습니다(증류 없이 같은 조건 학습이 필요).
+- 결론: CPU 데모용으로 쓸 수는 있지만 정확도 손해가 커서, 데모 기본 백본은 CLIP을 유지합니다.
+
 같은 날 추가로 시도한 것 (모두 Market 합성 기준):
 - **좌우 반전 TTA**(`tools/finetune.py --extract-only --flip`, `results/finetune_clip_pair_flip.csv`): 외형만 Extreme 77.2 → 78.0, Low 92.7 → 93.1. 재순위화 조합에서는 차이 없음(84.4 → 84.6, `results/kreciprocal_clippair-flip_cr.csv`).
 - **속성 분류기를 CLIP-ReID 특징으로 재학습**(`tools/attr_probe.py --src clip+clipreid`): 속성 정확도 Extreme 78.3 → 79.8%, 검색 정답률은 그대로(`results/kreciprocal_clippair_cr.csv`).
@@ -535,6 +579,10 @@ python tools/eval_shift.py && python tools/eval_msmt.py   # 일반화 시험
 python tools/eval_night.py && python tools/night_analysis.py && python tools/build_demo_night.py
 python tools/finetune.py --arch clip_vit_b16 --online --msmt --night --night-cams 1,2,3,4 --pair --pair-extreme 0.6667     --init weights/clip_vit_b16_vast_lowlight_ft_pair.pth --lr 7e-6 --no-extract     --out weights/clip_vit_b16_vast_lowlight_ft_night_c1234.pth   # 카메라 1~4만 학습 (약 42분)
 python tools/eval_night_cams.py   # 처음 보는 카메라(5~8) 검증
+python tools/adapt_site.py        # 새 현장(카메라 5~8) 라벨 없이 적응 (약 19분) → 다시 eval_night_cams.py
+python tools/finetune.py --arch clip_vit_b16 --online --msmt --pair --pair-extreme 0.6667 --lr 2e-5 --cam-aug --no-extract     --out weights/clip_vit_b16_vast_lowlight_ft_cam.pth   # 카메라 처리 합성 (약 37분)
+python tools/finetune.py --online --msmt --night --pair --pair-extreme 0.6667 --init weights/osnet_x1_0_vast_lowlight_ft_pair_ext_24.pth     --lr 5e-5 --distill weights/clip_vit_b16_vast_lowlight_ft_night.pth --out weights/osnet_x1_0_distill_clipnight.pth     --prefix osnet_x1_0-distill --csv results/finetune_distill.csv   # CLIP → OSNet 증류 (약 50분)
+python tools/bench_cpu.py         # CPU 속도·크기 비교
 python tools/finetune.py --arch clip_vit_b16 --extract-only --flip --out weights/clip_vit_b16_vast_lowlight_ft_pair.pth \
     --prefix clip_vit_b16-ftpair-flip --csv results/finetune_clip_pair_flip.csv    # 좌우 반전 TTA
 python tools/attr_probe.py --src clip+clipreid --name probe-clip+clipreid         # CLIP-ReID 특징 속성 분류기
@@ -577,17 +625,17 @@ docs/         개발 일지(DEVLOG.md), 그림
 ## 향후 과제 (정확도 개선)
 - ~~짝 일관성 학습, Triplet 손실 + PK 샘플링, 더 강한 백본~~ → 완료 (CLIP ViT-B/16이 최종 모델).
 - ~~속성 분류기 재학습, CLIP 24 에폭, 좌우 반전 TTA, 노이즈 종류 다양화~~ → 해 봤지만 개선이 거의 없음([최종 모델](#최종-모델-일반화-시험)).
-- **두 백본 앙상블**.
-- **지식 증류**: CLIP 모델을 선생님으로 가벼운 OSNet을 학습해, 추론 비용을 낮추면서 성능 유지 (공개 데모·CPU용).
+- **두 백본 앙상블**: 11/7 확인 — Market 극저조도 +1.9이지만 실제 야간은 하락해 보류.
+- **지식 증류 개선**: ~~CLIP → OSNet 증류~~ → 완료(CPU 3.4배 빠름, 실제 야간은 선생님의 절반). 다음은 더 큰 학생(OSNet 대신 작은 ViT)이나 증류 없는 대조 실험으로 효과 분리.
 - **검증용 ID 분리**: train 일부 인물을 학습에서 빼 λ·β 검증에 사용 (지금은 학습한 이미지로 검증해 속성 가중치가 과소 선택됨).
 - **색 변화 범위 확대**.
-- **실제 야간 대응**: ~~① Night600 train으로 미세조정~~ → 완료(9.8 → 22.8). ② 합성을 실제 카메라처럼 바꾸기(노이즈 제거 뭉개짐·움직임 블러·가로등 번짐) ③ ~~처음 보는 카메라 검증~~ → 완료(Night600 안에서 장소를 나눠 확인: 새 장소에서는 이득 거의 없음). ④ 라벨 없는 새 현장 영상으로 적응(의사 라벨·트래킹 기반 자기 학습) ⑤ NightReID(동의서 필요)로 다른 실제 야간 데이터 검증.
+- **실제 야간 대응**: ~~① Night600 train으로 미세조정~~ → 완료(9.8 → 22.8). ② 합성을 실제 카메라처럼 바꾸기(노이즈 제거 뭉개짐·움직임 블러·가로등 번짐) ③ ~~처음 보는 카메라 검증~~ → 완료(새 장소에서는 이득 거의 없음). ④ ~~라벨 없는 새 현장 적응~~ → 완료(12.1 → 17.8), 다음은 원래 장소 성능 유지(원래 장소 데이터 함께 학습)와 영상 트래킹으로 묶음 품질 개선. ⑤ NightReID(동의서 필요)로 다른 실제 야간 데이터 검증.
 
 ## 한계
 - 합성 시험 결과(Extreme 85.2)를 실제 야간 성능으로 보면 안 됩니다. **실제 야간(Night600)에서는 합성으로만 학습한 모델이 9.8%, 실제 야간 사진을 더한 최종 모델도 22.8%**입니다.
   실제 CCTV는 카메라 내부에서 노이즈를 제거해 뭉개진 영상이라, 거친 노이즈 중심의 합성과 성격이 다릅니다([실제 야간 검증](#실제-야간-검증-night600)).
   최종 모델은 Night600과 **같은 카메라 8대**로 학습했습니다(사람은 다름). 학습하지 않은 장소(카메라 5~8)로 나눠 확인하면 Night600 학습 이득이 거의 사라져(12.9 → 12.1),
-  **처음 보는 야간 현장에서는 약 12% 수준**으로 봐야 합니다([처음 보는 카메라 검증](#처음-보는-카메라-검증-night600-카메라-분할)).
+  **처음 보는 야간 현장에서는 약 12% 수준**으로 봐야 합니다([처음 보는 카메라 검증](#처음-보는-카메라-검증-night600-카메라-분할)). 라벨 없는 현장 사진으로 적응하면 약 18%까지 오릅니다.
 - **AdaBN 효과는 과대평가됐을 수 있습니다.** 합성 저조도는 이미지 전체에 같은 방식으로 적용된 변화라, 정규화 통계를 다시 맞추는 AdaBN과 특히 잘 맞습니다. 실제 야간 영상은 조명이 고르지 않고(가로등, 그림자) 카메라마다 처리 방식이 달라 효과가 작을 수 있습니다.
 - **미세조정 결과도 과대평가됐을 수 있습니다.** 학습용 저조도와 평가용 저조도가 같은 합성 모델(노출·노이즈 범위)에서 나와, 모델이 이 합성 노이즈의 특성 자체를 배웠을 수 있습니다. 실제 야간 영상 검증이 필요합니다.
 - OSNet 미세조정은 밝은 사진 성능을 조금 떨어뜨립니다(Rank-1 94.5 → 91.3). CLIP 백본은 94.4로 거의 회복합니다.

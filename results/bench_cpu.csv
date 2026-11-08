@@ -1,0 +1,3 @@
+model,params_M,file_MB,ms_per_image_b1,ms_per_image_b64
+"CLIP ViT-B/16 (최종, 선생님)",86.1,332.7,42.7,23.7
+OSNet x1.0 (증류 학생),2.2,12.6,20.5,7.0

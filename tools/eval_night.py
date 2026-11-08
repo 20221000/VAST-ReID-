@@ -30,9 +30,11 @@ MODELS = {"사전학습 OSNet (Market)": ("osnet_x1_0", "weights/osnet_x1_0_mark
           "OSNet 미세조정 (Market, 고정 합성)": ("osnet_x1_0-ft", "weights/osnet_x1_0_vast_lowlight_ft.pth"),
           "OSNet 최종 (Market + MSMT17, 24 에폭)": ("osnet_x1_0-ftmsmt24", "weights/osnet_x1_0_vast_lowlight_ft_online_msmt_24.pth"),
           "OSNet 짝 + triplet (24 에폭)": ("osnet_x1_0-ftpairext24", "weights/osnet_x1_0_vast_lowlight_ft_pair_ext_24.pth"),
+          "OSNet 증류 학생 (최종 CLIP → OSNet)†": ("osnet_x1_0-distill", "weights/osnet_x1_0_distill_clipnight.pth"),
           "CLIP ViT-B/16 짝 + triplet (12 에폭)": ("clip_vit_b16-ftpair", "weights/clip_vit_b16_vast_lowlight_ft_pair.pth"),
           "CLIP ViT-B/16 + 노이즈 종류 다양화 (12 에폭)": ("clip_vit_b16-ftnoise", "weights/clip_vit_b16_vast_lowlight_ft_noise.pth"),
           "CLIP ViT-B/16 짝 + triplet (24 에폭)": ("clip_vit_b16-ftpair24", "weights/clip_vit_b16_vast_lowlight_ft_pair_24.pth"),
+          "CLIP ViT-B/16 + 카메라 처리 합성 (12 에폭)": ("clip_vit_b16-ftcam", "weights/clip_vit_b16_vast_lowlight_ft_cam.pth"),
           "CLIP ViT-B/16 + Night600 train (24 에폭)†": ("clip_vit_b16-ftnight", "weights/clip_vit_b16_vast_lowlight_ft_night.pth")}
 
 

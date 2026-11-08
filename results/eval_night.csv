@@ -11,6 +11,9 @@ model,prefix,method,rank1,rank5,rank10,mAP,mINP,num_valid_query
 OSNet 짝 + triplet (24 에폭),osnet_x1_0-ftpairext24,cosine,0.068349,0.125688,0.170183,0.01909,0.002823,2180
 OSNet 짝 + triplet (24 에폭),osnet_x1_0-ftpairext24,csls,0.074771,0.145413,0.195413,0.024642,0.002914,2180
 OSNet 짝 + triplet (24 에폭),osnet_x1_0-ftpairext24,kr+csls,0.076606,0.142202,0.177064,0.03134,0.003492,2180
+OSNet 증류 학생 (최종 CLIP → OSNet)†,osnet_x1_0-distill,cosine,0.116055,0.230734,0.304587,0.049291,0.005182,2180
+OSNet 증류 학생 (최종 CLIP → OSNet)†,osnet_x1_0-distill,csls,0.122018,0.249541,0.318349,0.057426,0.006173,2180
+OSNet 증류 학생 (최종 CLIP → OSNet)†,osnet_x1_0-distill,kr+csls,0.131193,0.233945,0.292661,0.075355,0.007318,2180
 CLIP ViT-B/16 짝 + triplet (12 에폭),clip_vit_b16-ftpair,cosine,0.083486,0.164679,0.215138,0.02713,0.002941,2180
 CLIP ViT-B/16 짝 + triplet (12 에폭),clip_vit_b16-ftpair,csls,0.097706,0.18945,0.249541,0.031806,0.003191,2180
 CLIP ViT-B/16 짝 + triplet (12 에폭),clip_vit_b16-ftpair,kr+csls,0.094037,0.162844,0.212385,0.042307,0.003662,2180
@@ -20,6 +23,9 @@ CLIP ViT-B/16 + 노이즈 종류 다양화 (12 에폭),clip_vit_b16-ftnoise,kr+c
 CLIP ViT-B/16 짝 + triplet (24 에폭),clip_vit_b16-ftpair24,cosine,0.076606,0.165138,0.209174,0.02574,0.002853,2180
 CLIP ViT-B/16 짝 + triplet (24 에폭),clip_vit_b16-ftpair24,csls,0.090826,0.168807,0.231193,0.030025,0.003231,2180
 CLIP ViT-B/16 짝 + triplet (24 에폭),clip_vit_b16-ftpair24,kr+csls,0.091284,0.16055,0.211009,0.041125,0.003511,2180
+CLIP ViT-B/16 + 카메라 처리 합성 (12 에폭),clip_vit_b16-ftcam,cosine,0.07844,0.172018,0.223853,0.026331,0.002905,2180
+CLIP ViT-B/16 + 카메라 처리 합성 (12 에폭),clip_vit_b16-ftcam,csls,0.098165,0.193578,0.258257,0.03074,0.003034,2180
+CLIP ViT-B/16 + 카메라 처리 합성 (12 에폭),clip_vit_b16-ftcam,kr+csls,0.094954,0.175688,0.217431,0.040658,0.003241,2180
 CLIP ViT-B/16 + Night600 train (24 에폭)†,clip_vit_b16-ftnight,cosine,0.205046,0.377064,0.455963,0.105032,0.010012,2180
 CLIP ViT-B/16 + Night600 train (24 에폭)†,clip_vit_b16-ftnight,csls,0.227982,0.383486,0.451835,0.107094,0.01019,2180
 CLIP ViT-B/16 + Night600 train (24 에폭)†,clip_vit_b16-ftnight,kr+csls,0.224771,0.365138,0.427064,0.150514,0.017431,2180

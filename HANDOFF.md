@@ -480,3 +480,9 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - 결론: Night600 학습 이득은 장소·카메라에 묶여 있음. 새 현장 실제 야간은 약 12% 수준으로 보고.
 - 가중치 `weights/clip_vit_b16_vast_lowlight_ft_night_c1234.pth`는 로컬에만 있음(Release 미업로드).
 - 다음 후보: ① 라벨 없는 새 현장 영상으로 적응(트래킹 기반 의사 라벨) ② 합성을 실제 카메라처럼(노이즈 제거 뭉개짐·블러) ③ 발표 자료(11/18).
+
+### 11/8 — 남은 개선 3가지 결과
+- 새 현장 적응: 새 장소 12.1 → 17.8(라벨 없이), 원래 장소 19.1 → 15.2. `weights/clip_vit_b16_vast_lowlight_ft_night_c1234_adapt58.pth`(로컬).
+- 합성 개선(`--cam-aug`): 효과 없음(Night600 9.8). `weights/clip_vit_b16_vast_lowlight_ft_cam.pth`(로컬).
+- 경량화(증류): OSNet 학생 Night600 12.2(CLIP 22.8), CPU 장당 7.0ms vs 23.7ms. `weights/osnet_x1_0_distill_clipnight.pth`(로컬). 데모 기본은 CLIP 유지.
+- 새 가중치 4개는 Release 미업로드. 다음: 발표 자료(11/18), (선택) 증류 없이 같은 조건 OSNet 학습으로 증류 효과 분리.
