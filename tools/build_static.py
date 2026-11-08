@@ -110,7 +110,7 @@ def build_data():
     for ds, i, lv in jobs:
         for bb in core.BACKBONES:
             for m, (csls, kr) in MODELS.items():
-                for adabn in (0, 1):
+                for adabn in ((0, 1) if bb == "base" else (0,)):  # 저조도 보정은 사전학습 OSNet에서만 켤 수 있음
                     r = core.search(lv if ds == "market" else "normal", None, "normal", bool(adabn), csls, 1.0, 0.5, {},
                                     None, None, kr, bb, "auto", ds, i)
                     dump(api / "search" / f"{ds}_{i}_{lv}_{bb}_{m}_{adabn}.json", img.fix(r))

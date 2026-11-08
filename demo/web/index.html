@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VAST-ReID 데모</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
-<link rel="stylesheet" href="web/style.css?v=pages2">
+<link rel="stylesheet" href="web/style.css?v=adabn1">
 </head>
 <body>
 <header>
@@ -89,6 +89,7 @@
         <span class="t"><b>저조도 보정</b><small>AdaBN (BN 통계 재추정)</small></span>
         <span class="track"><i></i></span>
       </button>
+      <p class="foot hidden" id="adabn-note" style="margin:-10px 0 0">저조도 보정은 OSNet 사전학습 백본에서만 씁니다. 미세조정 백본은 이미 저조도를 학습해 효과가 없거나(최종 모델 Extreme 78.0 → 77.9) 오히려 떨어집니다(OSNet 미세조정 68.9 → 47.0).</p>
 
       <button type="button" class="btn primary" id="btn-search">검색하기</button>
     </aside>
@@ -235,6 +236,6 @@
   </div>
 </section>
 
-<script src="web/app.js?v=pages2"></script>
+<script src="web/app.js?v=adabn1"></script>
 </body>
 </html>

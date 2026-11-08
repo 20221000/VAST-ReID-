@@ -175,10 +175,19 @@ function initSearch() {
   $("#attr-strength").addEventListener("change", () => {
     $("#strength-warn").classList.toggle("hidden", $("#attr-strength").value === "auto");
   });
-  $("#backbone").addEventListener("change", () => {
-    S.adabn = $("#backbone").value === "base"; $("#t-adabn").setAttribute("aria-pressed", String(S.adabn));
-  });
+  // 저조도 보정(AdaBN)은 사전학습 OSNet에만: 미세조정 백본은 이미 저조도를 학습해 효과가 없거나(최종 CLIP Extreme 78.0 vs 77.9)
+  // 해로움(OSNet 미세조정 68.9 → 47.0, results/finetune*.csv) → 스위치를 끈 채 잠금
+  const syncAdabn = () => {
+    const base = $("#backbone").value === "base";
+    S.adabn = base;
+    $("#t-adabn").setAttribute("aria-pressed", String(base));
+    $("#t-adabn").disabled = !base;
+    $("#adabn-note").classList.toggle("hidden", base);
+  };
+  $("#backbone").addEventListener("change", syncAdabn);
+  syncAdabn();
   $("#t-adabn").addEventListener("click", () => {
+    if ($("#t-adabn").disabled) return;
     S.adabn = !S.adabn; $("#t-adabn").setAttribute("aria-pressed", String(S.adabn));
   });
   $("#btn-search").addEventListener("click", doSearch);

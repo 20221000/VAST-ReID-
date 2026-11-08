@@ -60,6 +60,7 @@ details .more { display: flex; flex-direction: column; gap: 14px; margin-top: 10
 .toggle .t { display: flex; flex-direction: column; gap: 2px; } .toggle .t b { font-weight: 600; } .toggle .t small { font-size: 12px; color: var(--sub); }
 .track { width: 44px; height: 26px; border-radius: 13px; background: var(--line2); display: flex; align-items: center; padding: 3px; flex: none; }
 .track i { width: 20px; height: 20px; border-radius: 10px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+.toggle:disabled { cursor: not-allowed; opacity: 0.55; }
 .toggle[aria-pressed="true"] .track { background: var(--navy); justify-content: flex-end; }
 
 /* 이미지 검색: main */
