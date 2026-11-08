@@ -1006,3 +1006,11 @@
 - **경량화**(`--distill`, `tools/bench_cpu.py`): 최종 CLIP → OSNet, 코사인 + 관계 증류, 12 에폭 45분(에폭 226초, 선생님 순전파 포함).
   Market 89.8 / 86.8 / 68.9(기존 OSNet과 같음), Night600 7.5 → **12.2 / 5.7**(선생님 22.8의 절반). CPU 1장 20.5ms vs CLIP 42.7ms, 64장 묶음 장당 7.0 vs 23.7ms, 파일 13MB vs 333MB.
   학생도 Night600 라벨로 학습해 상승분이 증류 덕인지 라벨 덕인지 미분리. 데모 기본은 CLIP 유지.
+
+### 11/8 — 웹 데모 공개 배포 (GitHub Pages, 무료 · push 자동 배포)
+- HF Space(Gradio·서버형)는 이 계정에서 PRO 필요(402, 11/2) → 정적 사이트로 결정. 배포처: GitHub Pages(사용자 선택), 데이터: Market + Night600 일부(MSMT17 재배포 금지로 제외).
+- `tools/build_static.py`: 기본 샘플 Market 24명 × 조도 3 + Night600 쿼리 8명 × 백본 5 × 거리 보정 4 × AdaBN 2 = 검색 응답 3,200개, 텍스트 예시 5문장 × 조도 3, 벤치마크, 트래킹 프레임 65장 × 3(폭 640) → `demo/static/` 20.6MB(파일 6,031개), 27초.
+- `app.js` 정적 모드: `<html data-static="1">`이면 API 대신 JSON. 목격자 진술·자유 문장·AI 설명은 끄고 안내 문구. index.html 자산 경로를 상대 경로로 바꿔 Pages 하위 경로(/VAST-ReID-/)와 로컬 서버 모두 동작.
+- `.github/workflows/pages.yml`: main push(demo/web·demo/static 변경) 시 조립·배포. Pages 소스를 GitHub Actions로 설정(gh api).
+- 확인: 로컬 정적 사이트에서 검색 조합 전부, 참조 사진 38,356건 모두 존재, 텍스트·트래킹 정상. 배포 사이트 https://20221000.github.io/VAST-ReID-/ 정상(콘솔 오류 없음).
+- 첫 로드 때 이전 app.js가 캐시돼 오류가 보였음 → `?v=` 버전 갱신으로 해결(화면 코드를 고칠 때 버전 문자열도 함께 바꾸기).

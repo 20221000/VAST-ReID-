@@ -7,6 +7,8 @@ VAST-ReID는 야간·저조도 환경에서 사람 재식별(Person Re-ID) 성�
 이 프로젝트는 공개 데이터셋(Market-1501)에 물리 기반 저조도를 합성해 **조도 3단계 데이터셋**을 만들고,
 **저조도에서 ReID가 왜 무너지는지 분석**하고, 학습 없는 보정(AdaBN·CSLS·재순위화)과 **저조도 미세조정**, **더 큰 백본(CLIP ViT-B/16)**으로 성능을 회복하는 방법을 검증합니다.
 
+**웹 데모(공개판): https://20221000.github.io/VAST-ReID-/**
+
 ![low-light grid](docs/figures/lowlight_grid.jpg)
 
 ## 핵심 결과 (요약)
@@ -475,7 +477,16 @@ query 쪽 진술은 사람이 본 정답 속성으로 대신하고, gallery 쪽 
 2. **텍스트 검색**: 인상착의 문장 → 속성 추출(키워드 규칙, 로컬에서는 LLM 선택 가능) → 속성 일치 순 검색, 선택한 인물의 **AI 시맨틱 캡션**, 그 인물로 이미지 재검색.
 3. **벤치마크**: `results/*.csv`의 실제 값으로 핵심 지표, 방법 × 조도 막대그래프, 실패 원인 분포, 저조도 MOT17 트래킹 프레임과 지표를 표시합니다.
 
-`demo/app.py`(Gradio)는 이전 버전 데모, `space/app.py`는 공개용 축소판입니다.
+`demo/app.py`(Gradio)는 이전 버전 데모, `space/app.py`는 이전 공개용 축소판입니다.
+
+### 공개판: GitHub Pages (무료, 자동 배포)
+**https://20221000.github.io/VAST-ReID-/** — 같은 화면을 서버 없이 정적 사이트로 배포합니다.
+- 서버 대신 `tools/build_static.py`가 데모 API 응답을 미리 계산해 `demo/static/`(약 21MB)에 저장하고, 화면은 `<html data-static="1">`일 때 그 JSON을 읽습니다.
+- **main에 push하면 자동 배포**(`.github/workflows/pages.yml`): `demo/web/`(HTML·CSS·JS)을 GitHub에서 고치면 1분 안팎으로 사이트에 반영됩니다.
+  검색 결과·벤치마크 수치를 바꿨을 때만 로컬에서 `python tools/build_static.py`를 다시 실행해 `demo/static/`을 커밋합니다(데이터·특징이 로컬에만 있음).
+- 공개 범위: Market-1501 기본 샘플 24명 + Night600 실제 야간 쿼리 8명과 그 검색 결과 사진만. **MSMT17은 재배포 금지라 제외**. 키·가중치 없음.
+- 공개판에서 꺼진 기능(로컬 데모 전용): 목격자 진술 필터, 자유 문장 텍스트 검색(예시 5문장만), AI 오답 설명·캡션, LLM 속성 추출, 텍스트 결과로 재검색.
+- 로컬 확인: `python tools/build_static.py --site _site` → `python -m http.server -d _site 8000`.
 
 ### 실패 원인 분석 (`results/failure_causes.csv`)
 Rank-1을 놓친 쿼리에서 1위로 잘못 나온 이미지의 원인 (gallery: 주간).
