@@ -124,6 +124,8 @@ def build_data():
                     n += 1
         print(f"  search {ds} {i} {lv}: 누적 {n}개 응답, 이미지 {img.n}장  ({time.time() - t0:.0f}s)", flush=True)
 
+    build_browser_pack(img, market_idx)
+
     for k, text in enumerate(TEXT_EXAMPLES):
         for lv in core.LEVELS:
             dump(api / "text" / f"{k}_{lv}.json", img.fix(core.text_search(text, lv)))
@@ -139,6 +141,65 @@ def build_data():
             cv2.imwrite(str(p), im, [cv2.IMWRITE_JPEG_QUALITY, 72])
     size = sum(f.stat().st_size for f in OUT.rglob("*") if f.is_file()) / 2 ** 20
     print(f"[static] {OUT}: 검색 응답 {n}개, 사진 {img.n}장, 합계 {size:.1f}MB  ({time.time() - t0:.0f}s)")
+
+
+def build_browser_pack(img, market_idx):
+    """브라우저 계산용 데이터 (최종 모델 CLIPN, Market 기본 샘플 24명, 주간 gallery):
+    목격자 진술 재순위화 = 진술 없는 점수 + λ·속성 일치도 (demo_core.search와 같은 식)를 JS에서 계산하고,
+    자유 문장 텍스트 검색도 같은 속성 확률로 JS에서 계산. 점수 벡터·속성 확률은 float32."""
+    import numpy as np
+    pf, feat, W = core.CLIPN, "none", OUT / "api/wit"
+    W.mkdir(parents=True, exist_ok=True)
+    gi = core.items("normal", "gallery")
+    gp, gc = np.array([g.pid for g in gi]), np.array([g.camid for g in gi])
+    for g in gi:  # 진술·텍스트 검색은 갤러리 어느 사진이든 결과로 올 수 있음
+        img(core.img_url("normal", "gallery", g.path.name))
+    dump(W / "gallery.json", {"name": [g.path.stem for g in gi], "pid": gp.tolist(), "cam": gc.tolist()})
+    P = core.probs("normal", "gallery", core.ATTR_PROBE[pf])
+    mat = np.concatenate([P[k] for k in core.ATTR_VALUES], axis=1)
+    (W / "probs.bin").write_bytes(mat.astype("<f4").tobytes())  # [N, V] float32 행 우선, 속성 순서 = ATTR_VALUES
+    pids = set(gp.tolist()) | {core.items(lv, "query")[i].pid for lv in core.LEVELS for i in market_idx}
+    dump(W / "persons.json", {str(k): {"a": {a: str(core.PERSONS[k][a]) for a in core.ATTR_VALUES}, "c": core.caption(k)}
+                              for k in sorted(pids) if k in core.PERSONS})
+    hub = {}
+    for lv in ("low", "extreme"):
+        f = core.hub_freq(feat, lv, pf)
+        hub[lv] = {} if f is None else {str(j): int(f[j]) for j in np.where(f >= 34)[0]}
+    meta = {"s": {}, "c": {}, "hub": hub, "n": len(gi), "v": int(mat.shape[1])}
+
+    def enc(x, valid):  # float32, 제외 항목은 -inf (서버와 같은 순위가 나오도록 양자화하지 않음)
+        lo, hi = float(x[valid].min()), float(x[valid].max())
+        return np.where(valid, x, -np.inf).astype("<f4").tobytes(), lo, hi
+
+    for lv in core.LEVELS:
+        q, qfa = core.items(lv, "query"), core.feats(lv, "query", feat, pf)
+        gf = core.feats("normal", "gallery", feat, pf)
+        for i in market_idx:
+            qi_ = q[i]
+            cos = gf @ qfa[i]
+            valid = ~((gp == qi_.pid) & (gc == qi_.camid))
+            b, lo, hi = enc(cos, np.ones_like(valid))
+            (W / f"cos_{i}_{lv}.bin").write_bytes(b)
+            meta["c"][f"{i}_{lv}"] = [lo, hi]
+            for m, (csls, kr) in MODELS.items():  # demo_core.search의 진술 전 점수와 같은 계산
+                lam, beta, used = 0.5, 1.0, False
+                row = core.kr_row(lv, feat, pf, i) if kr else None
+                kp = core.kr_params(lv, feat, pf) if kr else None
+                if kr and row is not None and kp is not None:
+                    d = row + (kp["beta"] * core.hub_score(lv, "normal", feat, kp["k"], pf) if csls else 0)
+                    score, lam, used = -d, kp["lam"], True
+                if not used:
+                    score = cos.copy()
+                    cp = core.csls_params(lv, "normal", feat, pf)
+                    if cp:
+                        beta, lam = cp["beta"], cp["lam"]
+                    if csls:
+                        score = score - beta * core.hub_score(lv, "normal", feat, cp["k"] if cp else 50, pf)
+                b, lo, hi = enc(np.asarray(score, np.float64), valid)
+                (W / f"s_{i}_{lv}_{m}.bin").write_bytes(b)
+                meta["s"][f"{i}_{lv}_{m}"] = [lo, hi, float(lam)]
+    dump(W / "meta.json", meta)
+    print(f"  [pack] 브라우저 계산용: gallery {len(gi)}장, 점수 벡터 {len(meta['s'])}개, 속성 {mat.shape[1]}값", flush=True)
 
 
 def build_ai(workers: int):
@@ -185,6 +246,8 @@ def build_ai(workers: int):
                 x["ai_caption"] = caption[(r["g_level"], x["name"])]
         r["ai_model"] = model
         dump(f, r)
+    dump(OUT / "api/captions.json", {"model": model, "text": {x["name"]: x["ai_caption"] for f, r in docs.items() if "chips" in r
+                                                                for x in r["results"] if x.get("ai_caption")}})
     print(f"  [ai] 완료: 실패 {fail}건, 모델 {model}, {core._llm().summary()}  ({time.time() - t0:.0f}s)")
 
 

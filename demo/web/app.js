@@ -7,6 +7,8 @@ const STATIC = document.documentElement.dataset.static === "1";
 const AI_OFF = "이 결과에는 미리 만든 AI 설명이 없습니다. 로컬 데모(python demo/server.py)에서 바로 생성할 수 있습니다.";
 let TEXT_EX = [];
 const getJSON = async (f) => { const r = await fetch(f); if (!r.ok) throw new Error(`${f} ${r.status}`); return r.json(); };
+const getBin = async (f) => { const r = await fetch(f); if (!r.ok) throw new Error(`${f} ${r.status}`); return r.arrayBuffer(); };
+const ATTR_KEYS = ["upper_color", "bag", "lower_color", "sleeve", "lower_type", "hat"];
 async function staticApi(path, p) {
   switch (path) {
     case "/api/attr_values": return getJSON("api/attr_values.json");
@@ -14,11 +16,118 @@ async function staticApi(path, p) {
     case "/api/samples": return getJSON(`api/samples_${p.level}.json`);
     case "/api/search": {
       const m = `${p.csls ? "c" : ""}${p.kr ? "k" : ""}` || "p";
-      return getJSON(`api/search/${p.ds}_${p.qidx}_${p.ds === "night" ? "x" : p.q_level}_${p.backbone}_${m}_${p.adabn ? 1 : 0}.json`);
+      const r = await getJSON(`api/search/${p.ds}_${p.qidx}_${p.ds === "night" ? "x" : p.q_level}_${p.backbone}_${m}_${p.adabn ? 1 : 0}.json`);
+      if (!ATTR_KEYS.some((k) => p[k])) return r;
+      if (p.ds === "market" && p.backbone === "clipn") return witnessSearch(r, p, m);
+      return { ...r, kr_note: [r.kr_note, "공개판의 목격자 진술은 최종 모델(CLIP + Night600)과 Market-1501 쿼리에서만 계산되어, 이번 검색에는 반영하지 않았습니다"].filter(Boolean).join(" · ") };
     }
-    case "/api/text": return getJSON(`api/text/${Math.max(0, TEXT_EX.indexOf(p.q))}_${p.g_level}.json`);
+    case "/api/text": return textSearch(p);
     default: return { text: AI_OFF };  // ai_explain, ai_caption
   }
+}
+
+/* ---- 공개판 브라우저 계산 (tools/build_static.py build_browser_pack, 최종 모델 · 주간 gallery) ----
+   목격자 진술: 점수 = 진술 전 점수 + λ × 속성 일치도 (vastreid/demo_core.py search·_agreement와 같은 식)
+   텍스트 검색: 같은 속성 확률로 일치도 순위 (demo_core.text_search, 키워드 규칙 parse_rules 이식) */
+let PACK = null;
+async function pack() {
+  if (PACK) return PACK;
+  const [meta, gal, persons, probs, caps] = await Promise.all([getJSON("api/wit/meta.json"), getJSON("api/wit/gallery.json"),
+    getJSON("api/wit/persons.json"), getBin("api/wit/probs.bin"), getJSON("api/captions.json").catch(() => ({ text: {} }))]);
+  const off = {}; let o = 0;
+  for (const k of Object.keys(META.values)) { off[k] = o; o += META.values[k].length; }
+  PACK = { meta, gal, persons, probs: new Float32Array(probs), off, caps };
+  return PACK;
+}
+const decode = (buf) => Float64Array.from(new Float32Array(buf));  // float32 점수 (-inf = 같은 사람·같은 카메라 제외)
+function agreement(P, choices) {  // 입력한 속성 n개 평균 × n/6
+  const terms = Object.entries(choices).filter(([k, v]) => v && META.values[k]?.includes(v));
+  if (!terms.length) return null;
+  const n = P.meta.n, V = P.meta.v, out = new Float64Array(n);
+  for (const [k, v] of terms) {
+    const c = P.off[k] + META.values[k].indexOf(v);
+    for (let j = 0; j < n; j++) out[j] += P.probs[j * V + c];
+  }
+  for (let j = 0; j < n; j++) out[j] /= 6;
+  return out;
+}
+const camStr = (c) => `cam${String(c + 1).padStart(2, "0")}`;
+const attrsKo = (P, pid) => { const a = P.persons[pid]?.a; return a ? Object.fromEntries(Object.entries(a).map(([k, v]) => [k, META.value_ko[v] || v])) : null; };
+const captionOf = (P, pid) => P.persons[pid]?.c ?? "속성 정보 없음 (사람이 아니거나 일부만 찍힌 이미지)";
+function causesOf(P, qpid, j, lv) {  // demo_core._failure_causes
+  const c = [], gp = P.gal.pid[j];
+  if (gp <= 0) c.push("사람이 아니거나 일부만 찍힌 이미지");
+  const f = lv !== "normal" ? P.meta.hub[lv]?.[j] : undefined;
+  if (f >= 34) c.push(`hub 이미지 · 어두운 query ${f.toLocaleString()}개의 Top-10에 등장`);
+  const a = P.persons[qpid]?.a, b = P.persons[gp]?.a;
+  if (a && b) {
+    const same = Object.keys(META.values).filter((k) => a[k] === b[k] && !["unknown", "False", "none"].includes(a[k]));
+    if (same.length >= 3) c.push("유사 의복 · " + same.slice(0, 3).map((k) => `${META.attr_ko[k]} ${META.value_ko[a[k]]}`).join(" + "));
+  }
+  if (lv === "extreme") c.push("Extreme 조도 (평균 밝기 약 0.08)"); else if (lv === "low") c.push("Low 조도");
+  return c.length ? c : ["외형 특징 손실"];
+}
+async function witnessSearch(base, p, m) {
+  const P = await pack(), key = `${p.qidx}_${p.q_level}`;
+  const [sb, cb] = await Promise.all([getBin(`api/wit/s_${key}_${m}.bin`), getBin(`api/wit/cos_${key}.bin`)]);
+  const lamAuto = P.meta.s[`${key}_${m}`][2];
+  const s = decode(sb), cos = decode(cb);
+  const choices = Object.fromEntries(ATTR_KEYS.map((k) => [k, p[k]]));
+  const lam = p.attr_strength === "strong" ? 0.3 : lamAuto;
+  const agr = agreement(P, choices);
+  const score = s.map((v, j) => v + lam * agr[j]);
+  const order = [...score.keys()].filter((j) => Number.isFinite(score[j])).sort((a, b) => score[b] - score[a]);
+  const qpid = base.query.pid, lv = p.q_level;
+  let hits = 0, apSum = 0, first = null;
+  order.forEach((j, r) => { if (P.gal.pid[j] === qpid) { hits++; apSum += hits / (r + 1); if (first == null) first = r + 1; } });
+  const results = order.slice(0, 10).map((j, r) => {
+    const ok = P.gal.pid[j] === qpid, name = P.gal.name[j];
+    return { rank: r + 1, url: `img/normal/gallery/${name}.jpg`, name, glvl: "normal", score: Math.round(score[j] * 1000) / 1000,
+             sim: Math.round(cos[j] * 1000) / 1000, pid: P.gal.pid[j], cam: camStr(P.gal.cam[j]), illum: "Normal", ok,
+             causes: ok ? [] : causesOf(P, qpid, j, lv) };
+  });
+  return { ...base, results, rank1: !!results[0]?.ok, ap: hits ? Math.round(apSum / hits * 1000) / 1000 : null, first_correct: first,
+           attr_weight: Math.round(lam / 6 * 1000) / 1000, attr_strength: p.attr_strength };
+}
+const COLORS = { "검": "black", "흰": "white", "하얀": "white", "빨": "red", "보라": "purple", "노란": "yellow", "회색": "gray",
+                 "파란": "blue", "초록": "green", "분홍": "pink", "갈색": "brown" };
+const KW = { sleeve: { long: ["긴팔", "long sleeve"], short: ["반팔", "short sleeve", "t-shirt"] },
+             lower_type: { pants: ["긴 바지", "긴바지", "청바지", "pants", "jeans"], shorts: ["반바지", "shorts"], skirt: ["치마", "원피스", "skirt", "dress"] },
+             bag: { backpack: ["백팩", "배낭", "backpack"], handbag: ["핸드백", "handbag"], bag: ["가방", "숄더백", "shoulder bag"] },
+             hat: { True: ["모자", "hat", "cap"] } };
+function parseRules(text) {  // demo_core.parse_rules
+  const t = text.toLowerCase(), out = {};
+  for (const [attr, table] of Object.entries(KW)) {
+    for (const [v, kws] of Object.entries(table)) if (kws.some((k) => t.includes(k))) { out[attr] = v; break; }
+  }
+  const re = /(검|흰|하얀|빨|보라|노란|회색|파란|초록|분홍|갈색)\S*\s+(?:(?:긴팔|반팔|긴|짧은)\s*)?(상의|티셔츠|티|셔츠|반바지|바지|하의|치마)/g;
+  for (const mm of text.matchAll(re)) {
+    const attr = ["상의", "티셔츠", "티", "셔츠"].includes(mm[2]) ? "upper_color" : "lower_color";
+    if (META.values[attr].includes(COLORS[mm[1]]) && !(attr in out)) out[attr] = COLORS[mm[1]];
+  }
+  if (text.includes("바지") && !("lower_type" in out)) out.lower_type = "pants";
+  return out;
+}
+async function textSearch(p) {
+  const P = await pack(), attrs = parseRules(p.q || "");
+  for (const k of Object.keys(META.values)) {
+    const v = p[k];
+    if (v === "-") delete attrs[k]; else if (v && META.values[k].includes(v)) attrs[k] = v;
+  }
+  const chips = Object.entries(attrs).map(([k, v]) => ({ key: k, value: v, label: `${META.attr_ko[k]} · ${META.value_ko[v] || v}` }));
+  if (!chips.length) return { how: "키워드 규칙", chips: [], results: [] };
+  const sc = agreement(P, attrs), seen = new Set(), res = [];
+  const order = [...sc.keys()].sort((a, b) => sc[b] - sc[a]);
+  for (const j of order) {
+    const pid = P.gal.pid[j];
+    if (pid <= 0 || seen.has(pid)) continue;
+    seen.add(pid);
+    const name = P.gal.name[j];
+    res.push({ gidx: j, url: `img/normal/gallery/${name}.jpg`, name, score: Math.round(sc[j] * 100) / 100, pid, cam: camStr(P.gal.cam[j]),
+               illum: "Normal", caption: captionOf(P, pid), attrs: attrsKo(P, pid), ai_caption: P.caps.text[name] });
+    if (res.length >= 12) break;
+  }
+  return { how: "키워드 규칙", chips, results: res, g_level: "normal", ai_model: P.caps.model };
 }
 const trackSrc = (lv, i) => (STATIC ? `track/${lv}/${i}.jpg` : `/api/track_frame?level=${lv}&i=${i}`);
 const TRACK_STEP = STATIC ? 8 : 4;
@@ -82,6 +191,7 @@ async function doSearch() {
   $("#btn-search").disabled = true;
   try {
     const r = await api("/api/search", params);
+    r.witness = Object.values(attrsParams()).some(Boolean);  // 목격자 진술 반영 결과에는 AI 오답 설명을 붙이지 않음
     S.last = r; S.selected = null;
     renderSearch(r);
   } finally { $("#btn-search").disabled = false; }
@@ -143,9 +253,10 @@ function showCompare(i) {
     ${r.query.original ? `<figure><div class="photo"><img src="${esc(r.query.original)}" alt="쿼리 원본"></div><figcaption>쿼리 원본 · Normal</figcaption></figure>` : ""}
     <figure><div class="photo"><img src="${esc(x.url)}" alt="${x.rank}위 결과"></div><figcaption>${x.rank}위 · ${x.ok ? "정답" : "오답"} · ID ${x.pid > 0 ? x.pid : "없음"}</figcaption></figure>
     <p class="foot" style="flex:1 1 220px;margin:0">${esc(r.query.caption)}${r.dataset ? "" : "<br>(쿼리 인물의 정답 속성, 참고용)"}</p>
-    ${x.ok ? "" : `<div class="aibox wait" id="ai-explain"><b>AI 오답 설명 · 비전 LLM</b><span>쿼리와 오답 사진을 보고 설명을 만드는 중…</span></div>`}`;
+    ${x.ok ? "" : r.witness ? `<p class="foot" style="flex:1 1 100%;margin:0">목격자 진술을 반영한 결과에는 AI 오답 설명을 표시하지 않습니다 (진술 없이 검색하면 표시).</p>`
+      : `<div class="aibox wait" id="ai-explain"><b>AI 오답 설명 · 비전 LLM</b><span>쿼리와 오답 사진을 보고 설명을 만드는 중…</span></div>`}`;
   $("#compare-box").classList.remove("hidden");
-  if (!x.ok) loadExplain(r, x);
+  if (!x.ok && !r.witness) loadExplain(r, x);
   refit();
 }
 
@@ -216,8 +327,8 @@ async function doText(e) {
   const r = await api("/api/text", { q: $("#t-q").value, g_level: T.level, llm: !!$("#t-llm")?.checked, ...T.extra });
   T.results = r.results; T.sel = 0; T.aiModel = r.ai_model;
   $("#t-chips").innerHTML = `<span class="k">추출된 속성</span>` +
-    r.chips.map((c) => STATIC ? `<span class="pchip">${esc(c.label)}</span>` : `<button type="button" class="pchip" data-k="${esc(c.key)}" title="눌러서 제거">${esc(c.label)}</button>`).join("") +
-    (STATIC ? "" : `<button type="button" class="addchip" id="t-addbtn">+ 속성 추가</button>`);
+    r.chips.map((c) => `<button type="button" class="pchip" data-k="${esc(c.key)}" title="눌러서 제거">${esc(c.label)}</button>`).join("") +
+    `<button type="button" class="addchip" id="t-addbtn">+ 속성 추가</button>`;
   $("#t-count").textContent = `${r.results.length}명`;
   $("#t-how").textContent = r.chips.length ? `속성 추출: ${r.how} · 카드를 눌러 상세 보기` : "인식된 속성이 없습니다. 예: 흰색 상의, 검은 바지, 백팩";
   $("#t-grid").innerHTML = r.results.map((x, i) => `
@@ -251,7 +362,8 @@ async function loadCaption(x) {
   const seq = ++capSeq;
   $("#d-cap-ai").textContent = "사진을 보고 캡션을 만드는 중…";
   $("#d-cap-head").textContent = "AI 시맨틱 캡션";
-  const res = STATIC ? (x.ai_caption ? { text: x.ai_caption, model: `${T.aiModel} · 미리 생성` } : { text: AI_OFF })
+  const res = STATIC ? (x.ai_caption ? { text: x.ai_caption, model: `${T.aiModel} · 미리 생성` }
+    : { text: "공개판의 AI 캡션은 예시 문장(입력창 자동완성) 결과에만 미리 만들어 두었습니다. 아래 속성 기반 설명을 참고하세요." })
     : await api("/api/ai_caption", { level: T.level, split: "gallery", name: x.name }).catch((e) => ({ error: String(e) }));
   if (seq !== capSeq) return;
   $("#d-cap-ai").textContent = res.text || `캡션을 만들지 못했습니다 (${res.error || "응답 없음"})`;
@@ -268,7 +380,7 @@ function initText() {
   $("#t-chips").addEventListener("click", (e) => {
     if (e.target.id === "t-addbtn") { $("#t-add").classList.toggle("hidden"); return; }
     const chip = e.target.closest(".pchip");
-    if (chip) { T.extra[chip.dataset.k] = ""; doText(); }
+    if (chip) { T.extra[chip.dataset.k] = "-"; doText(); }
   });
   $("#t-add-ok").addEventListener("click", () => { T.extra[keySel.value] = valSel.value; $("#t-add").classList.add("hidden"); doText(); });
   $("#d-research").addEventListener("click", () => {
@@ -372,18 +484,12 @@ async function initStatic() {
   if (!STATIC) return;
   TEXT_EX = await getJSON("api/text_examples.json");
   const note = (html) => `<p class="foot static-note">${html}</p>`;
-  // 목격자 진술 필터: 조합이 너무 많아 미리 계산하지 않음
-  ["#a-upper_color", "#a-bag", "#a-lower_color", "#a-sleeve", "#a-lower_type", "#a-hat", "#attr-strength"].forEach((id) => { $(id).disabled = true; });
   $("#a-upper_color").closest("section").insertAdjacentHTML("beforeend",
-    note("공개판(GitHub Pages)은 미리 계산한 결과를 보여줍니다. 목격자 진술 필터는 로컬 데모 전용이고, AI 오답 설명은 미리 생성해 둔 것을 표시합니다. 샘플은 Market-1501 24명 + Night600 실제 야간 8명입니다."));
-  // 텍스트 검색: 자유 문장 대신 미리 계산한 예시 문장
-  const inp = $("#t-q");
-  inp.insertAdjacentHTML("afterend", `<select id="t-q-ex" aria-label="예시 문장">${TEXT_EX.map((t) => `<option>${esc(t)}</option>`).join("")}</select>`);
-  inp.remove();
-  $("#t-q-ex").id = "t-q";
-  $("#t-q").addEventListener("change", () => doText());
-  $("#t-llm").closest("label").replaceWith(Object.assign(document.createElement("span"), { className: "foot", textContent: "공개판은 예시 문장만 · 자유 입력·AI 속성 추출은 로컬 데모" }));
-  $("#t-level").addEventListener("change", () => doText());
+    note("공개판(GitHub Pages): 목격자 진술은 최종 모델과 Market-1501 쿼리에서 브라우저가 직접 계산합니다. 샘플은 Market-1501 24명 + Night600 실제 야간 8명이고, AI 오답 설명은 미리 생성해 둔 것을 표시합니다."));
+  $("#t-q").setAttribute("list", "t-ex");
+  $("#t-q").insertAdjacentHTML("afterend", `<datalist id="t-ex">${TEXT_EX.map((t) => `<option value="${esc(t)}">`).join("")}</datalist>`);
+  $("#t-llm").closest("label").replaceWith(Object.assign(document.createElement("span"), { className: "foot", textContent: "공개판: 키워드 규칙으로 속성 추출 · 주간 기록에서 검색 (AI 속성 추출은 로컬 데모)" }));
+  $("#t-level").value = "normal"; $("#t-level").disabled = true;
   $("#d-research").classList.add("hidden");
 }
 

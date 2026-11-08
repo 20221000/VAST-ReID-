@@ -493,3 +493,4 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - 수치·검색 결과 수정: 로컬에서 `python tools/build_static.py` → `demo/static/` 커밋·push.
 - 공개 범위: Market 24명 + Night600 8명 샘플과 결과 사진만, MSMT17 제외, 키 없음. AI 설명·목격자 진술·자유 문장은 로컬 전용.
 - 공개판 AI 설명: `python tools/build_static.py --ai`로 로컬에서 미리 생성(키는 .env만, 캐시 재사용). 결과 데이터를 다시 만들 때도 `--ai`를 붙일 것.
+- 공개판 목격자 진술·자유 문장 검색은 브라우저 계산(최종 모델·Market·주간 gallery). 진술 반영 결과에는 AI 오답 설명 숨김. 데이터 재생성: `python tools/build_static.py --ai`.

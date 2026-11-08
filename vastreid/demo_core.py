@@ -595,7 +595,11 @@ def text_search(text: str, g_level: str = "normal", use_llm: bool = False, extra
             how = f"키워드 규칙 (LLM 사용 불가: {type(e).__name__})"
     if not attrs:
         attrs = parse_rules(text)
-    attrs.update({k: v for k, v in (extra or {}).items() if v in ATTR_VALUES.get(k, [])})
+    for k, v in (extra or {}).items():  # 칩 추가(값) · 제거("-"), 빈 값은 그대로(서버가 모든 속성을 빈 값 기본으로 넘김)
+        if v == "-":
+            attrs.pop(k, None)
+        elif v in ATTR_VALUES.get(k, []):
+            attrs[k] = v
     chips = [{"key": k, "value": v, "label": f"{ATTR_KO[k]} · {VALUE_KO.get(v, v)}"} for k, v in attrs.items()]
     if not attrs:
         return {"how": how, "chips": [], "results": []}
