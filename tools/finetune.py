@@ -247,6 +247,10 @@ def train(args):
     if args.night:  # Night600 train(300명, 실제 야간)을 뒤 라벨로 추가. test 300명과 사람이 겹치지 않음
         assert args.online, "--night는 --online과 함께"
         ni = list_night600("train")
+        if args.night_cams:  # 카메라 분할 검증: 지정한 카메라(1부터)의 사진만 학습
+            cams = {int(c) - 1 for c in args.night_cams.split(",")}
+            ni = [x for x in ni if x.camid in cams]
+            print(f"[ft] Night600 train 카메라 {args.night_cams}만 사용: {len(ni)}장, {len({x.pid for x in ni})}명", flush=True)
         nu = {p: n_cls + i for i, p in enumerate(sorted({x.pid for x in ni}))}
         items += ni
         labels += [nu[x.pid] for x in ni]
@@ -397,6 +401,7 @@ def main():
     ap.add_argument("--init", type=Path, default=None, help="이어서 학습할 미세조정 가중치")
     ap.add_argument("--msmt", action="store_true", help="MSMT17 train 추가 (data/raw/msmt17, --online 필요)")
     ap.add_argument("--night", action="store_true", help="Night600 train 추가 (data/raw/night600, 실제 야간, --online 필요)")
+    ap.add_argument("--night-cams", default="", help="--night에서 이 카메라(1부터, 예: 1,2,3,4)의 사진만 학습 (처음 보는 카메라 검증용)")
     ap.add_argument("--pair", action="store_true",
                     help="짝 일관성 + batch-hard triplet + PK 샘플링 (--online 필요)")
     ap.add_argument("--pk-p", type=int, default=16, help="--pair: 배치당 사람 수")
