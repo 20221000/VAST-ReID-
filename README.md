@@ -598,11 +598,11 @@ python demo/server.py
 ```
 가중치: OSNet은 torchreid Model Zoo의 Market-1501 학습 가중치(`weights/osnet_x1_0_market1501.pth`), Zero-DCE는 공식 레포의 `Epoch99.pth`(`weights/zerodce_epoch99.pth`)를 사용합니다.
 
-직접 학습한 가중치(CLIP ViT-B/16 4개, OSNet 미세조정 7개)는 git에 넣지 않고 [GitHub Release `weights-v1`](https://github.com/20221000/VAST-ReID-/releases/tag/weights-v1)에 첨부되어 있습니다. 받은 파일을 `weights/`에 넣으면 학습 없이 평가·데모를 실행할 수 있습니다.
+직접 학습한 가중치(CLIP ViT-B/16 7개, OSNet 8개: 미세조정 7 + 증류 학생 1)는 git에 넣지 않고 [GitHub Release `weights-v1`](https://github.com/20221000/VAST-ReID-/releases/tag/weights-v1)에 첨부되어 있습니다. 받은 파일을 `weights/`에 넣으면 학습 없이 평가·데모를 실행할 수 있습니다.
 ```bash
-gh release download weights-v1 -R 20221000/VAST-ReID- -D weights          # 전체 (약 1.5GB)
+gh release download weights-v1 -R 20221000/VAST-ReID- -D weights          # 전체 (약 2.5GB)
 gh release download weights-v1 -R 20221000/VAST-ReID- -D weights -p "clip_vit_b16_vast_lowlight_ft_night.pth"   # 데모 기본(최종)만 (349MB)
-gh release download weights-v1 -R 20221000/VAST-ReID- -D weights -p "osnet_*"   # OSNet만 (약 85MB)
+gh release download weights-v1 -R 20221000/VAST-ReID- -D weights -p "osnet_*"   # OSNet만 (약 100MB, CPU용 증류 학생 포함)
 ```
 
 ## 레포 구조

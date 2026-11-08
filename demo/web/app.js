@@ -259,7 +259,7 @@ async function loadBench() {
     <div class="kpi"><span>데이터셋 규모</span><span class="mono v">${c.dataset.persons.toLocaleString()}명 · ${c.dataset.images.toLocaleString()}장</span><small>× 조도 ${c.dataset.levels}단계 (Market-1501 합성)</small></div>
     <div class="kpi"><span>Normal → Extreme 하락폭</span><span class="mono v" style="color:var(--ng)">${sign(c.drop)}</span><small>Rank-1 · 극저조도 쿼리 → 주간 gallery</small></div>
     <div class="kpi"><span>저조도 개선 효과 (Zero-DCE)</span><span class="mono v" style="color:var(--ng)">${sign(c.zerodce_low)}</span><small>Rank-1 · Low 쿼리 → 주간, 오히려 하락</small></div>
-    ${c.night ? `<div class="kpi"><span>실제 야간 (Night600)</span><span class="mono v">${fmt(c.night.final)}</span><small>Rank-1 · 합성만 학습 ${fmt(c.night.zero)} → 실제 야간 300명 추가</small></div>` : ""}
+    ${c.night ? `<div class="kpi"><span>실제 야간 (Night600)</span><span class="mono v">${fmt(c.night.final)}</span><small>Rank-1 · 합성만 학습 ${fmt(c.night.zero)} → 실제 야간 300명 추가 (학습한 카메라 기준, 새 장소는 12.1 → 라벨 없이 적응 17.8)</small></div>` : ""}
     <div class="kpi dark"><span>제안 방법 효과 (최고 조합)</span><span class="mono v">${sign(c.best_gain_ext ?? c.best_gain)}</span><small>${c.best_gain_ext != null ? `Extreme 쿼리 → 주간 Rank-1 ${fmt(c.best_value_ext)} · Low ${fmt(c.best_value)}` : `Low 쿼리 → 주간 Rank-1 ${fmt(c.best_value)}`}</small></div>`;
   renderBars(); renderFail(); renderTrack(); renderNight();
 }

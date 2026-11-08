@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VAST-ReID 데모</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
-<link rel="stylesheet" href="/web/style.css?v=review3">
+<link rel="stylesheet" href="/web/style.css?v=sitecheck">
 </head>
 <body>
 <header>
@@ -200,7 +200,8 @@
           <h2>실제 야간 검증 · Night600 <span id="n-name">Rank-1</span> <small style="font-weight:400;color:var(--sub);font-size:13px">(야간 query → 야간 gallery, CSLS)</small></h2>
         </div>
         <div id="night-rows"></div>
-        <p class="foot">위 막대는 모두 합성 저조도입니다. Night600(IDF, IEEE TMM 2024)은 실제 야간 CCTV 8대, test 300명(query 2,180장 / gallery 14,351장)입니다. † 최종 모델만 Night600 train 300명(test와 다른 사람, 같은 카메라)으로 학습했고 나머지는 Night600을 보지 않은 zero-shot입니다. 논문 결과는 학습 데이터·백본이 달라 참고용입니다 (results/eval_night.csv).</p>
+        <p class="foot">위 막대는 모두 합성 저조도입니다. Night600(IDF, IEEE TMM 2024)은 실제 야간 CCTV 8대, test 300명(query 2,180장 / gallery 14,351장)입니다. † 최종 모델만 Night600 train 300명(test와 다른 사람, 같은 카메라)으로 학습했고 나머지는 Night600을 보지 않은 zero-shot입니다. 논문 결과는 학습 데이터·백본이 달라 참고용입니다 (results/eval_night.csv).
+          처음 보는 장소에서는 이 이득이 거의 사라집니다: 카메라 1~4만 학습하면 카메라 5~8에서 12.1%(합성만 12.9%), 그 장소의 라벨 없는 사진으로 적응하면 17.8% (results/eval_night_cams.csv).</p>
       </section>
       <aside class="side">
         <section class="panel">
@@ -234,6 +235,6 @@
   </div>
 </section>
 
-<script src="/web/app.js?v=review3"></script>
+<script src="/web/app.js?v=sitecheck"></script>
 </body>
 </html>
