@@ -41,3 +41,4 @@ flagged/
 
 # HF Spaces 데이터 팩 (tools/build_space.py로 재생성)
 space/data/
+_site/

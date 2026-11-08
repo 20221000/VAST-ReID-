@@ -1,0 +1,46 @@
+# 웹 데모 공개판 → GitHub Pages (무료). main에 push하면 자동 배포.
+# 화면: demo/web (HTML·CSS·JS), 데이터: demo/static (tools/build_static.py로 미리 계산해 커밋).
+# 조립 방식은 tools/build_static.py --site 와 같음.
+name: Deploy demo to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "demo/web/**"
+      - "demo/static/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp -r demo/static/. _site/
+          cp -r demo/web _site/web
+          sed '0,/<html lang="ko">/s//<html lang="ko" data-static="1">/' demo/web/index.html > _site/index.html
+          grep -q 'data-static="1"' _site/index.html
+          touch _site/.nojekyll
+          du -sh _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

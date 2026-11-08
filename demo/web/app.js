@@ -2,7 +2,28 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// 정적 모드(GitHub Pages 공개판, <html data-static="1">): 서버 없이 tools/build_static.py가 미리 계산한 JSON을 읽음
+const STATIC = document.documentElement.dataset.static === "1";
+const AI_OFF = "공개판에서는 AI 설명을 끕니다 (API 키 비용). 로컬 데모(python demo/server.py)에서 사용할 수 있습니다.";
+let TEXT_EX = [];
+const getJSON = async (f) => { const r = await fetch(f); if (!r.ok) throw new Error(`${f} ${r.status}`); return r.json(); };
+async function staticApi(path, p) {
+  switch (path) {
+    case "/api/attr_values": return getJSON("api/attr_values.json");
+    case "/api/bench": return getJSON("api/bench.json");
+    case "/api/samples": return getJSON(`api/samples_${p.level}.json`);
+    case "/api/search": {
+      const m = `${p.csls ? "c" : ""}${p.kr ? "k" : ""}` || "p";
+      return getJSON(`api/search/${p.ds}_${p.qidx}_${p.ds === "night" ? "x" : p.q_level}_${p.backbone}_${m}_${p.adabn ? 1 : 0}.json`);
+    }
+    case "/api/text": return getJSON(`api/text/${Math.max(0, TEXT_EX.indexOf(p.q))}_${p.g_level}.json`);
+    default: return { text: AI_OFF };  // ai_explain, ai_caption
+  }
+}
+const trackSrc = (lv, i) => (STATIC ? `track/${lv}/${i}.jpg` : `/api/track_frame?level=${lv}&i=${i}`);
+const TRACK_STEP = STATIC ? 8 : 4;
 const api = async (path, params = {}) => {
+  if (STATIC) return staticApi(path, params);
   const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v !== null && v !== undefined));
   const r = await fetch(`${path}?${q}`);
   if (!r.ok) throw new Error(`${path} ${r.status}`);
@@ -181,11 +202,11 @@ const T = { extra: {}, results: [], sel: 0, level: "normal" };
 async function doText(e) {
   if (e) e.preventDefault();
   T.level = $("#t-level").value;
-  const r = await api("/api/text", { q: $("#t-q").value, g_level: T.level, llm: $("#t-llm").checked, ...T.extra });
+  const r = await api("/api/text", { q: $("#t-q").value, g_level: T.level, llm: !!$("#t-llm")?.checked, ...T.extra });
   T.results = r.results; T.sel = 0;
   $("#t-chips").innerHTML = `<span class="k">추출된 속성</span>` +
-    r.chips.map((c) => `<button type="button" class="pchip" data-k="${esc(c.key)}" title="눌러서 제거">${esc(c.label)}</button>`).join("") +
-    `<button type="button" class="addchip" id="t-addbtn">+ 속성 추가</button>`;
+    r.chips.map((c) => STATIC ? `<span class="pchip">${esc(c.label)}</span>` : `<button type="button" class="pchip" data-k="${esc(c.key)}" title="눌러서 제거">${esc(c.label)}</button>`).join("") +
+    (STATIC ? "" : `<button type="button" class="addchip" id="t-addbtn">+ 속성 추가</button>`);
   $("#t-count").textContent = `${r.results.length}명`;
   $("#t-how").textContent = r.chips.length ? `속성 추출: ${r.how} · 카드를 눌러 상세 보기` : "인식된 속성이 없습니다. 예: 흰색 상의, 검은 바지, 백팩";
   $("#t-grid").innerHTML = r.results.map((x, i) => `
@@ -302,7 +323,7 @@ function renderTrack() {
   $("#trk-metrics").innerHTML = main ? `<div><small>IDF1</small><span class="mono">${main.IDF1.toFixed(1)}</span></div><div><small>HOTA</small><span class="mono">${main.HOTA.toFixed(1)}</span></div><div><small>ID 전환</small><span class="mono">${main.IDSW}</span></div><div><small>트래커</small><span>BoT-SORT + OSNet(AdaBN)</span></div>` : "";
   $("#trk-table").innerHTML = `<tr><th>트래커 (검출기)</th><th>HOTA</th><th>IDF1</th><th>AssA</th></tr>` +
     rows.map((r) => `<tr><td>${esc(r.tracker)} <small style="color:var(--sub)">${esc(r.detector)}</small></td><td class="mono">${r.HOTA.toFixed(1)}</td><td class="mono">${r.IDF1.toFixed(1)}</td><td class="mono">${r.AssA.toFixed(1)}</td></tr>`).join("");
-  $("#trk-img").src = `/api/track_frame?level=${B.tlev}&i=${B.frame}`;
+  $("#trk-img").src = trackSrc(B.tlev, B.frame);
 }
 
 function initBench() {
@@ -317,7 +338,7 @@ function initBench() {
     const playing = !!B.timer;
     if (playing) { clearInterval(B.timer); B.timer = null; }
     else {
-      B.timer = setInterval(() => { B.frame = B.frame >= 520 ? 1 : B.frame + 4; $("#trk-img").src = `/api/track_frame?level=${B.tlev}&i=${B.frame}`; }, 160);
+      B.timer = setInterval(() => { B.frame = B.frame + TRACK_STEP > 520 ? 1 : B.frame + TRACK_STEP; $("#trk-img").src = trackSrc(B.tlev, B.frame); }, 160);
     }
     $("#trk-play").setAttribute("aria-label", playing ? "트래킹 영상 재생" : "일시정지");
     $("#trk-icon").setAttribute("d", playing ? "M4 2.5v11l9-5.5z" : "M4 2.5h3v11H4zM9 2.5h3v11H9z");
@@ -334,9 +355,30 @@ const refit = fitZoom;
 window.addEventListener("resize", fitZoom);
 fitZoom();
 
+/* ---------------- 정적 모드: 서버가 필요한 기능은 끄고 안내 ---------------- */
+async function initStatic() {
+  if (!STATIC) return;
+  TEXT_EX = await getJSON("api/text_examples.json");
+  const note = (html) => `<p class="foot static-note">${html}</p>`;
+  // 목격자 진술 필터: 조합이 너무 많아 미리 계산하지 않음
+  ["#a-upper_color", "#a-bag", "#a-lower_color", "#a-sleeve", "#a-lower_type", "#a-hat", "#attr-strength"].forEach((id) => { $(id).disabled = true; });
+  $("#a-upper_color").closest("section").insertAdjacentHTML("beforeend",
+    note("공개판(GitHub Pages)은 미리 계산한 결과만 보여줘 목격자 진술 필터·AI 설명은 로컬 데모에서만 동작합니다. 샘플은 Market-1501 24명 + Night600 실제 야간 8명입니다."));
+  // 텍스트 검색: 자유 문장 대신 미리 계산한 예시 문장
+  const inp = $("#t-q");
+  inp.insertAdjacentHTML("afterend", `<select id="t-q-ex" aria-label="예시 문장">${TEXT_EX.map((t) => `<option>${esc(t)}</option>`).join("")}</select>`);
+  inp.remove();
+  $("#t-q-ex").id = "t-q";
+  $("#t-q").addEventListener("change", () => doText());
+  $("#t-llm").closest("label").replaceWith(Object.assign(document.createElement("span"), { className: "foot", textContent: "공개판은 예시 문장만 · 자유 입력·AI 속성 추출은 로컬 데모" }));
+  $("#t-level").addEventListener("change", () => doText());
+  $("#d-research").classList.add("hidden");
+}
+
 /* ---------------- 시작 ---------------- */
 (async () => {
   META = await api("/api/attr_values");
+  await initStatic();
   initSearch(); initText(); initBench(); route();
   await loadSamples();
   doSearch();
