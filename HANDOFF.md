@@ -492,3 +492,4 @@ Gradio는 시안을 100% 재현할 필요 없음. `gr.Tabs` 3개 + `gr.Gallery` 
 - 화면 수정: `demo/web/`만 고쳐 push → 자동 반영. `index.html`의 `?v=` 버전도 함께 바꿀 것(브라우저 캐시).
 - 수치·검색 결과 수정: 로컬에서 `python tools/build_static.py` → `demo/static/` 커밋·push.
 - 공개 범위: Market 24명 + Night600 8명 샘플과 결과 사진만, MSMT17 제외, 키 없음. AI 설명·목격자 진술·자유 문장은 로컬 전용.
+- 공개판 AI 설명: `python tools/build_static.py --ai`로 로컬에서 미리 생성(키는 .env만, 캐시 재사용). 결과 데이터를 다시 만들 때도 `--ai`를 붙일 것.

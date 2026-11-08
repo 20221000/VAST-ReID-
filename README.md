@@ -481,12 +481,14 @@ query 쪽 진술은 사람이 본 정답 속성으로 대신하고, gallery 쪽 
 
 ### 공개판: GitHub Pages (무료, 자동 배포)
 **https://20221000.github.io/VAST-ReID-/** — 같은 화면을 서버 없이 정적 사이트로 배포합니다.
-- 서버 대신 `tools/build_static.py`가 데모 API 응답을 미리 계산해 `demo/static/`(약 17MB)에 저장하고, 화면은 `<html data-static="1">`일 때 그 JSON을 읽습니다.
+- 서버 대신 `tools/build_static.py`가 데모 API 응답을 미리 계산해 `demo/static/`(약 31MB, AI 설명 포함)에 저장하고, 화면은 `<html data-static="1">`일 때 그 JSON을 읽습니다.
 - **main에 push하면 자동 배포**(`.github/workflows/pages.yml`): `demo/web/`(HTML·CSS·JS)을 GitHub에서 고치면 1분 안팎으로 사이트에 반영됩니다.
   검색 결과·벤치마크 수치를 바꿨을 때만 로컬에서 `python tools/build_static.py`를 다시 실행해 `demo/static/`을 커밋합니다(데이터·특징이 로컬에만 있음).
 - 공개 범위: Market-1501 기본 샘플 24명 + Night600 실제 야간 쿼리 8명과 그 검색 결과 사진만. **MSMT17은 재배포 금지라 제외**. 키·가중치 없음.
 - 저조도 보정(AdaBN) 스위치는 OSNet 사전학습 백본에서만 켤 수 있습니다(미세조정 백본은 효과가 없거나 해로움: 최종 CLIP Extreme 78.0 → 77.9, OSNet 미세조정 68.9 → 47.0).
-- 공개판에서 꺼진 기능(로컬 데모 전용): 목격자 진술 필터, 자유 문장 텍스트 검색(예시 5문장만), AI 오답 설명·캡션, LLM 속성 추출, 텍스트 결과로 재검색.
+- **AI 오답 설명·캡션도 공개판에 있습니다**: `python tools/build_static.py --ai`가 로컬에서 `.env`의 키로 미리 생성해 JSON에 **텍스트만** 넣습니다(오답 설명 2,786개 + 캡션 180개, gpt-4.1-mini, 약 0.8달러, 이후 재실행은 캐시로 무료).
+  공개 사이트는 API를 전혀 부르지 않고 키도 없습니다. 빌드 마지막에 공개 데이터에서 키 형태 문자열·`.env` 값을 검사해 발견되면 중단합니다.
+- 공개판에서 꺼진 기능(로컬 데모 전용): 목격자 진술 필터, 자유 문장 텍스트 검색(예시 5문장만), LLM 속성 추출, 텍스트 결과로 재검색.
 - 로컬 확인: `python tools/build_static.py --site _site` → `python -m http.server -d _site 8000`.
 
 ### 실패 원인 분석 (`results/failure_causes.csv`)

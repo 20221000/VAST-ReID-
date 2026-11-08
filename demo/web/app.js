@@ -4,7 +4,7 @@ const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 // 정적 모드(GitHub Pages 공개판, <html data-static="1">): 서버 없이 tools/build_static.py가 미리 계산한 JSON을 읽음
 const STATIC = document.documentElement.dataset.static === "1";
-const AI_OFF = "공개판에서는 AI 설명을 끕니다 (API 키 비용). 로컬 데모(python demo/server.py)에서 사용할 수 있습니다.";
+const AI_OFF = "이 결과에는 미리 만든 AI 설명이 없습니다. 로컬 데모(python demo/server.py)에서 바로 생성할 수 있습니다.";
 let TEXT_EX = [];
 const getJSON = async (f) => { const r = await fetch(f); if (!r.ok) throw new Error(`${f} ${r.status}`); return r.json(); };
 async function staticApi(path, p) {
@@ -197,8 +197,10 @@ function initSearch() {
 let explainSeq = 0;
 async function loadExplain(r, x) {
   const seq = ++explainSeq;
-  const res = await api("/api/ai_explain", { q_level: r.query.lvl, q_split: r.query.split, q_name: r.query.name,
-    g_level: x.glvl, g_name: x.name, causes: x.causes.join("|") }).catch((e) => ({ error: String(e) }));
+  // 공개판: 로컬에서 미리 만든 설명(tools/build_static.py --ai)을 표시 — 사이트는 API를 부르지 않음
+  const res = STATIC ? (x.ai ? { text: x.ai, model: `${r.ai_model} · 미리 생성` } : { text: AI_OFF })
+    : await api("/api/ai_explain", { q_level: r.query.lvl, q_split: r.query.split, q_name: r.query.name,
+      g_level: x.glvl, g_name: x.name, causes: x.causes.join("|") }).catch((e) => ({ error: String(e) }));
   if (seq !== explainSeq || !$("#ai-explain")) return;  // 그 사이 다른 카드를 누름
   $("#ai-explain").classList.remove("wait");
   $("#ai-explain span").textContent = res.text || `설명을 만들지 못했습니다 (${res.error || "응답 없음"})`;
@@ -212,7 +214,7 @@ async function doText(e) {
   if (e) e.preventDefault();
   T.level = $("#t-level").value;
   const r = await api("/api/text", { q: $("#t-q").value, g_level: T.level, llm: !!$("#t-llm")?.checked, ...T.extra });
-  T.results = r.results; T.sel = 0;
+  T.results = r.results; T.sel = 0; T.aiModel = r.ai_model;
   $("#t-chips").innerHTML = `<span class="k">추출된 속성</span>` +
     r.chips.map((c) => STATIC ? `<span class="pchip">${esc(c.label)}</span>` : `<button type="button" class="pchip" data-k="${esc(c.key)}" title="눌러서 제거">${esc(c.label)}</button>`).join("") +
     (STATIC ? "" : `<button type="button" class="addchip" id="t-addbtn">+ 속성 추가</button>`);
@@ -249,7 +251,8 @@ async function loadCaption(x) {
   const seq = ++capSeq;
   $("#d-cap-ai").textContent = "사진을 보고 캡션을 만드는 중…";
   $("#d-cap-head").textContent = "AI 시맨틱 캡션";
-  const res = await api("/api/ai_caption", { level: T.level, split: "gallery", name: x.name }).catch((e) => ({ error: String(e) }));
+  const res = STATIC ? (x.ai_caption ? { text: x.ai_caption, model: `${T.aiModel} · 미리 생성` } : { text: AI_OFF })
+    : await api("/api/ai_caption", { level: T.level, split: "gallery", name: x.name }).catch((e) => ({ error: String(e) }));
   if (seq !== capSeq) return;
   $("#d-cap-ai").textContent = res.text || `캡션을 만들지 못했습니다 (${res.error || "응답 없음"})`;
   if (res.model) $("#d-cap-head").textContent = `AI 시맨틱 캡션 · ${res.model}`;
@@ -372,7 +375,7 @@ async function initStatic() {
   // 목격자 진술 필터: 조합이 너무 많아 미리 계산하지 않음
   ["#a-upper_color", "#a-bag", "#a-lower_color", "#a-sleeve", "#a-lower_type", "#a-hat", "#attr-strength"].forEach((id) => { $(id).disabled = true; });
   $("#a-upper_color").closest("section").insertAdjacentHTML("beforeend",
-    note("공개판(GitHub Pages)은 미리 계산한 결과만 보여줘 목격자 진술 필터·AI 설명은 로컬 데모에서만 동작합니다. 샘플은 Market-1501 24명 + Night600 실제 야간 8명입니다."));
+    note("공개판(GitHub Pages)은 미리 계산한 결과를 보여줍니다. 목격자 진술 필터는 로컬 데모 전용이고, AI 오답 설명은 미리 생성해 둔 것을 표시합니다. 샘플은 Market-1501 24명 + Night600 실제 야간 8명입니다."));
   // 텍스트 검색: 자유 문장 대신 미리 계산한 예시 문장
   const inp = $("#t-q");
   inp.insertAdjacentHTML("afterend", `<select id="t-q-ex" aria-label="예시 문장">${TEXT_EX.map((t) => `<option>${esc(t)}</option>`).join("")}</select>`);

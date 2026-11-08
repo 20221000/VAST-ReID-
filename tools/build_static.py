@@ -10,8 +10,10 @@ GitHub에서는 .github/workflows/pages.yml이 main push마다 demo/web + demo/s
 
 공개 범위 (사용자 결정, 11/8):
 - 사진: Market-1501 기본 샘플 24명과 Night600 query 8명, 그 검색 결과에 나온 사진만. **MSMT17은 재배포 금지라 제외.**
-- 키·모델 가중치 없음. AI 설명·캡션, LLM 속성 추출, 목격자 진술 필터, 자유 문장 텍스트 검색은 로컬 데모 전용
+- 키·모델 가중치 없음. LLM 속성 추출, 목격자 진술 필터, 자유 문장 텍스트 검색은 로컬 데모 전용
   (텍스트 검색은 예시 문장만 미리 계산).
+- `--ai`: 오답 카드의 AI 오답 설명과 텍스트 결과의 AI 캡션을 **로컬에서 미리 생성**해 JSON에 텍스트로만 넣음
+  (키는 .env에만, 공개 사이트는 API를 부르지 않음). 응답은 outputs/api_cache에 캐시되어 다시 실행하면 무료.
 """
 from __future__ import annotations
 
@@ -78,9 +80,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--site", type=Path, default=None, help="화면과 합친 확인용 사이트 폴더 (예: _site)")
     ap.add_argument("--skip-data", action="store_true", help="데이터는 그대로 두고 사이트만 조립")
+    ap.add_argument("--ai", action="store_true", help="AI 오답 설명·캡션을 미리 생성해 넣음 (.env의 API 키 필요, 캐시 재사용)")
+    ap.add_argument("--workers", type=int, default=8)
     args = ap.parse_args()
     if not args.skip_data:
         build_data()
+        if args.ai:
+            build_ai(args.workers)
+        check_no_secrets()
     if args.site:
         assemble(args.site)
 
@@ -132,6 +139,68 @@ def build_data():
             cv2.imwrite(str(p), im, [cv2.IMWRITE_JPEG_QUALITY, 72])
     size = sum(f.stat().st_size for f in OUT.rglob("*") if f.is_file()) / 2 ** 20
     print(f"[static] {OUT}: 검색 응답 {n}개, 사진 {img.n}장, 합계 {size:.1f}MB  ({time.time() - t0:.0f}s)")
+
+
+def build_ai(workers: int):
+    """검색 JSON의 오답마다 x["ai"], 텍스트 결과마다 x["ai_caption"]을 채움. 같은 (쿼리, 오답) 쌍은 한 번만 호출."""
+    from concurrent.futures import ThreadPoolExecutor
+    core.AI_MAX_CALLS = 10000  # 미리 생성용 (서버 실행 상한 120과 별개)
+    t0 = time.time()
+    files = sorted((OUT / "api/search").glob("*.json")) + sorted((OUT / "api/text").glob("*.json"))
+    docs = {f: json.loads(f.read_text(encoding="utf-8")) for f in files}
+    explain, caption = {}, {}
+    for f, r in docs.items():
+        if "query" in r:
+            q = r["query"]
+            for x in r["results"]:
+                if not x["ok"]:
+                    explain[(q["lvl"], q["split"], q["name"], x["glvl"], x["name"], tuple(x["causes"]))] = None
+        else:
+            for x in r["results"]:
+                caption[(r["g_level"], x["name"])] = None
+
+    def run(job):
+        kind, key = job
+        try:
+            out = core.ai_explain(*key[:5], list(key[5])) if kind == "e" else core.ai_caption(key[0], "gallery", key[1])
+            return job, out["text"], out["model"]
+        except Exception as e:  # 한 건 실패는 건너뜀 (화면에는 안내 문구)
+            return job, None, f"{type(e).__name__}"
+    jobs = [("e", k) for k in explain] + [("c", k) for k in caption]
+    print(f"  [ai] 오답 설명 {len(explain)}개 + 캡션 {len(caption)}개 생성 (캐시 재사용)", flush=True)
+    fail, model = 0, None
+    with ThreadPoolExecutor(workers) as ex:
+        for n, ((kind, key), text, m) in enumerate(ex.map(run, jobs), 1):
+            (explain if kind == "e" else caption)[key] = text
+            fail += text is None
+            model = model or (m if text else None)
+            if n % 200 == 0:
+                print(f"  [ai] {n}/{len(jobs)}  실패 {fail}  ({time.time() - t0:.0f}s)", flush=True)
+    for f, r in docs.items():
+        for x in r["results"]:
+            if "query" in r:
+                if not x["ok"]:
+                    x["ai"] = explain[(r["query"]["lvl"], r["query"]["split"], r["query"]["name"], x["glvl"], x["name"], tuple(x["causes"]))]
+            else:
+                x["ai_caption"] = caption[(r["g_level"], x["name"])]
+        r["ai_model"] = model
+        dump(f, r)
+    print(f"  [ai] 완료: 실패 {fail}건, 모델 {model}, {core._llm().summary()}  ({time.time() - t0:.0f}s)")
+
+
+def check_no_secrets():
+    """공개 데이터에 API 키 형태의 문자열이나 .env 값이 섞이지 않았는지 확인 (있으면 중단)."""
+    import re
+    env = ROOT / ".env"
+    vals = [v.split("=", 1)[1].strip().strip("\"'") for v in env.read_text(encoding="utf-8").splitlines()
+            if "=" in v and not v.lstrip().startswith("#")] if env.exists() else []
+    vals = [v for v in vals if len(v) >= 12]
+    pat = re.compile(r"(sk-[A-Za-z0-9_-]{16,}|xai-[A-Za-z0-9]{16,}|hf_[A-Za-z0-9]{20,}|KGAT_[A-Za-z0-9]{16,})")
+    for f in OUT.rglob("*.json"):
+        t = f.read_text(encoding="utf-8")
+        if pat.search(t) or any(v in t for v in vals):
+            raise SystemExit(f"[static] 키로 보이는 문자열 발견: {f} — 공개 데이터에서 제거 필요")
+    print("[static] 키 검사 통과 (공개 데이터에 API 키 없음)")
 
 
 def assemble(site: Path):
