@@ -1,0 +1,11 @@
+model,key,value
+reid_osnet,n,64
+reid_osnet,min_cos,0.9999997019767761
+reid_osnet,mean_cos,1.0
+reid_osnet,top5_order_same,1.0
+reid_osnet,ms_per_img_ort_cpu,4.36
+det_yolo11n,n,8
+det_yolo11n,frames,['data\\raw\\mot17\\MOT17\\train\\MOT17-02-FRCNN\\img1\\000001.jpg']
+det_yolo11n,boxes_onnx_vs_ultra,"[(7, 7), (7, 6), (6, 5), (6, 5), (7, 6), (6, 5), (7, 5), (7, 6)]"
+det_yolo11n,mean_best_iou,0.9260948247379727
+det_yolo11n,ms_per_frame_ort_cpu,12.0

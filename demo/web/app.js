@@ -146,10 +146,11 @@ let META = null;
 /* ---------------- 라우팅 ---------------- */
 function route() {
   const v = (location.hash || "#search").slice(1);
-  const view = ["search", "text", "bench"].includes(v) ? v : "search";
+  const view = ["search", "text", "video", "bench"].includes(v) ? v : "search";
   $$(".view").forEach((el) => el.classList.toggle("hidden", el.id !== `view-${view}`));
   $$("nav a").forEach((a) => { a.classList.toggle("on", a.dataset.view === view); a.setAttribute("aria-current", a.dataset.view === view ? "page" : "false"); });
   if (view === "bench" && !BENCH) loadBench();
+  if (view === "video" && window.initVideo) window.initVideo();
 }
 window.addEventListener("hashchange", route);
 

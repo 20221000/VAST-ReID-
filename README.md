@@ -484,7 +484,7 @@ query 쪽 진술은 사람이 본 정답 속성으로 대신하고, gallery 쪽 
 - 서버 대신 `tools/build_static.py`가 데모 API 응답을 미리 계산해 `demo/static/`(약 72MB: 주간 gallery 사진 전체·AI 설명 포함)에 저장하고, 화면은 `<html data-static="1">`일 때 그 JSON을 읽습니다.
 - **main에 push하면 자동 배포**(`.github/workflows/pages.yml`): `demo/web/`(HTML·CSS·JS)을 GitHub에서 고치면 1분 안팎으로 사이트에 반영됩니다.
   검색 결과·벤치마크 수치를 바꿨을 때만 로컬에서 `python tools/build_static.py`를 다시 실행해 `demo/static/`을 커밋합니다(데이터·특징이 로컬에만 있음).
-- 공개 범위: Market-1501 기본 샘플 24명 + Night600 실제 야간 쿼리 8명과 그 검색 결과 사진만. **MSMT17은 재배포 금지라 제외**. 키·가중치 없음.
+- 공개 범위: Market-1501 기본 샘플 24명 + Night600 실제 야간 쿼리 8명과 그 검색 결과 사진만. **MSMT17은 재배포 금지라 제외**. 키 없음(가중치는 아래 '영상에서 찾기'용 ONNX 2개만).
 - 저조도 보정(AdaBN) 스위치는 OSNet 사전학습 백본에서만 켤 수 있습니다(미세조정 백본은 효과가 없거나 해로움: 최종 CLIP Extreme 78.0 → 77.9, OSNet 미세조정 68.9 → 47.0).
 - **AI 오답 설명·캡션도 공개판에 있습니다**: `python tools/build_static.py --ai`가 로컬에서 `.env`의 키로 미리 생성해 JSON에 **텍스트만** 넣습니다(오답 설명 2,786개 + 캡션 180개, gpt-4.1-mini, 약 0.8달러, 이후 재실행은 캐시로 무료).
   공개 사이트는 API를 전혀 부르지 않고 키도 없습니다. 빌드 마지막에 공개 데이터에서 키 형태 문자열·`.env` 값을 검사해 발견되면 중단합니다.
@@ -493,6 +493,21 @@ query 쪽 진술은 사람이 본 정답 속성으로 대신하고, gallery 쪽 
 - **목격자 진술을 반영한 결과에는 AI 오답 설명을 표시하지 않습니다**(로컬·공개판 공통). 진술 없이 검색하면 미리 만든 설명이 나옵니다.
 - 공개판에서 꺼진 기능(로컬 데모 전용): 다른 백본·Night600 쿼리의 목격자 진술, Low·Extreme gallery 텍스트 검색, LLM 속성 추출, 텍스트 결과로 재검색, 예시 문장 밖 결과의 AI 캡션.
 - 로컬 확인: `python tools/build_static.py --site _site` → `python -m http.server -d _site 8000`.
+
+### 영상에서 찾기: 내 사진·영상으로 검색 (브라우저 계산, 업로드 없음)
+찾을 사람 사진 1장과 CCTV·휴대폰 영상을 넣으면, 영상 속에서 그 사람으로 보이는 장면을 유사도 순으로 추천합니다(공개판·로컬 공통, `demo/web/video.js`).
+**사진과 영상은 서버로 보내지 않습니다**: 모델을 브라우저로 받아 ONNX Runtime Web(WebGPU, 없으면 WASM)으로 기기 안에서 계산합니다.
+- 모델(`tools/export_onnx.py` → `demo/static/models/`): 사람 검출 **YOLO11n**(10.7MB, imgsz 480, NMS 포함) + ReID **증류 OSNet**(8.7MB, 최종 CLIP → OSNet, 정규화 포함).
+  PyTorch와 비교(`results/onnx_parity.csv`): ReID 특징 코사인 최소 0.9999997·상위 5개 순서 동일, 검출 상자 평균 IoU 0.93(Ultralytics 전처리와 패딩 위치 차이).
+- 절차: 초당 1·2·4장 추출 → 검출(신뢰도 ≥ 0.35, 높이 ≥ 프레임의 3.7%) → 인접 프레임 IoU ≥ 0.2로 같은 사람 묶기 → 묶음마다 최대 6장 특징 → 점수 = 상위 3장 유사도 평균 → 상위 8개 후보.
+  여러 사람이 있는 사진은 검출된 사람 중 하나를 고르고, 사람만 잘라 낸 사진은 사진 전체를 씁니다.
+- 예제(`tools/build_video_sample.py` → `demo/static/video/`): MOT17-04 합성 저조도(low) 35초 영상(H.264, 960×540, 16MB) + 같은 장면 주간 원본에서 자른 인물 4명.
+  같은 절차를 Python으로 재현해 그 영상 파일 그대로 측정(`results/video_sample.csv`): **29명 중 Rank-1 82.8%, Rank-5 86.2%**(쿼리와 같은 순간 ±2초는 점수에서 제외).
+  예제 4명은 이 중 1위로 찾은 사람에서 골랐고, 전체 정답률은 결과 화면에 함께 표시합니다. 브라우저 결과(트랙 89개·1~3위 유사도)는 Python(트랙 90개)과 거의 같았습니다.
+- 처리 시간(예제 70프레임, 사람 634건, Ryzen 9 7950X3D·Chrome): WebGPU 20.6초, WASM(CPU 1스레드, `?wasm=1`) 30.6초. 휴대폰은 더 느립니다.
+- 한계: 이 정확도는 합성 저조도·같은 장면 주간 사진 기준입니다. 극저조도(extreme)에서는 검출기가 사람을 대부분 놓쳐(`results/video_search.csv`, MOT17-02 extreme은 쿼리로 쓸 사람이 검출되지 않음) 실제 야간 영상에서는 더 낮습니다.
+  브라우저 ReID 모델의 실제 야간(Night600) 성능은 Rank-1 12.2%·Rank-10 31.8%이므로, 화면에서도 **후보 추천 도구**로 안내합니다.
+- 라이선스: YOLO11n은 Ultralytics AGPL-3.0, MOT17 영상은 CC BY-NC-SA 3.0(비상업).
 
 ### 실패 원인 분석 (`results/failure_causes.csv`)
 Rank-1을 놓친 쿼리에서 1위로 잘못 나온 이미지의 원인 (gallery: 주간).

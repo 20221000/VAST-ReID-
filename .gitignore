@@ -14,6 +14,7 @@ weights/
 *.pt
 *.ckpt
 *.onnx
+!demo/static/models/*.onnx
 *.zip
 *.tar
 *.tar.gz

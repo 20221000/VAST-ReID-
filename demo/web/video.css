@@ -1,0 +1,106 @@
+/* 영상에서 찾기 (video.js). 색·글꼴 변수는 style.css 것을 그대로 씀. 시안: claude.ai/artifact/9LSfa1uwL8RCdAg6nBQbXi */
+.sr { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.vwrap { max-width: 1200px; margin: 0 auto; padding: 40px 40px 56px; display: flex; flex-direction: column; gap: 24px; }
+.vhead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.vhead h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: -0.02em; }
+.vhead p { margin: 0; font-size: 16px; line-height: 1.6; color: var(--sub2); max-width: 720px; }
+.vpriv { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: var(--ok-bg); color: var(--ok); font-weight: 600; }
+.vcols { display: flex; flex-wrap: wrap; gap: 24px; }
+.vcard { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.vcard.vq { flex: 1 1 320px; max-width: 400px; }
+.vcard.vv { flex: 999 1 480px; }
+.vcard h2 { margin: 0; font-size: 17px; display: flex; align-items: center; gap: 10px; }
+.step { width: 26px; height: 26px; border-radius: 999px; background: var(--navy); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; }
+.drop { position: relative; display: flex; align-items: center; justify-content: center; min-height: 300px; border: 2px dashed var(--line2); border-radius: 14px; background: #F9FAFB; cursor: pointer; text-align: center; padding: 16px; overflow: hidden; }
+.drop.over { border-color: var(--navy); background: var(--ok-bg); }
+.drop:focus-within { outline: 3px solid var(--amber); outline-offset: 2px; }
+.drop-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.drop-empty b { font-size: 15px; }
+.drop-empty span { color: var(--sub); font-size: 13px; line-height: 1.5; }
+.qprev canvas { max-width: 100%; max-height: 280px; display: block; border-radius: 8px; }
+.drop video { width: 100%; max-height: 300px; border-radius: 8px; background: var(--photo); }
+.qboxes { display: flex; flex-wrap: wrap; gap: 6px; }
+.qboxes button { padding: 0; border: 2px solid transparent; border-radius: 8px; background: var(--photo); cursor: pointer; overflow: hidden; line-height: 0; min-height: 44px; }
+.qboxes button.on { border-color: var(--amber); }
+.qboxes canvas { width: 40px; height: 80px; }
+.vstat { margin: 0; color: var(--sub); font-size: 13px; }
+.vsamples { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.vsamples button { height: 84px; padding: 0; border-radius: 10px; border: 2px solid transparent; background: var(--photo); cursor: pointer; overflow: hidden; }
+.vsamples button.on { border-color: var(--amber); }
+.vsamples img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.vrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.vrow .btn { min-height: 44px; display: inline-flex; align-items: center; gap: 8px; }
+.vrun { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 20px 24px; }
+.vrun .seg { width: 300px; max-width: 100%; }
+.vest { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; min-width: 0; font-size: 15px; }
+.vrun .btn.primary { padding: 0 28px; display: inline-flex; align-items: center; gap: 10px; }
+.vrun .btn.primary:disabled { opacity: .45; cursor: not-allowed; }
+.vprog { flex: 1 1 100%; display: flex; flex-direction: column; gap: 6px; }
+.vprog .bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.vprog .bar div { height: 100%; width: 0; background: var(--navy); transition: width .2s; }
+.vprog span { font-size: 13px; color: var(--sub2); }
+.vnotes { display: flex; flex-wrap: wrap; gap: 16px; }
+.vwarn, .vinfo { flex: 1 1 300px; min-width: 0; display: flex; gap: 12px; align-items: flex-start; padding: 16px 18px; border-radius: 14px; }
+.vwarn { background: var(--warn-bg); color: var(--warn); }
+.vinfo { background: #fff; border: 1px solid var(--line); color: var(--sub2); }
+.vinfo b { color: var(--text); }
+.vwarn svg, .vinfo svg { flex: none; margin-top: 1px; }
+.vwarn p, .vinfo p { margin: 0; line-height: 1.6; }
+.vmain > .vwarn { flex: none; }
+.vtrack .mk.hi { z-index: 2; }
+#vr-qname { font-weight: 600; word-break: break-all; }
+
+.vres { max-width: 1440px; margin: 0 auto; padding: 32px 40px 56px; display: flex; flex-wrap: wrap; gap: 28px; }
+.vside { flex: 1 1 260px; max-width: 300px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.vside section { display: flex; flex-direction: column; gap: 10px; }
+.vside .sep { padding-top: 20px; border-top: 1px solid var(--line); }
+.vside .qthumb canvas { width: 100%; height: 100%; display: block; }
+.vside .qmeta .btn { align-self: flex-start; min-height: 36px; font-size: 13px; }
+.vdl { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; font-size: 13px; }
+.vdl dt { color: var(--sub); }
+.vdl dd { margin: 0; }
+.vthr { display: flex; justify-content: space-between; font-weight: 500; }
+#vr-thr { width: 100%; accent-color: var(--navy); }
+.vside .btn.primary { margin-top: 8px; font-size: 15px; }
+.vmain { flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.vtitle { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; }
+.vtitle h1 { margin: 0; font-size: 24px; }
+.vtitle h1 span { color: var(--sub); font-weight: 500; font-size: 16px; }
+.vplayer { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.vscreen { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; background: #11151F; overflow: hidden; }
+.vscreen video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.vscreen canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.vtl { display: flex; flex-direction: column; gap: 6px; }
+.vtrack { position: relative; height: 34px; border-radius: 8px; background: #F3F4F6; }
+.vtrack .mk { position: absolute; top: 6px; bottom: 6px; border: 0; border-radius: 3px; padding: 0; cursor: pointer; min-width: 8px; }
+.vtrack .mk.hi { background: var(--amber); }
+.vtrack .mk.mid { background: #9AA5BC; }
+.vtrack .ph { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); pointer-events: none; }
+.vticks { display: flex; justify-content: space-between; font-size: 12px; color: var(--sub); }
+.vlegend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--sub2); }
+.vlegend span { display: flex; align-items: center; gap: 6px; }
+.vlegend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.vlegend i.hi { background: var(--amber); }
+.vlegend i.mid { background: #9AA5BC; }
+.vlegend i.other { border: 2px solid #9CA3AF; }
+.vcands { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.vcand { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 14px; background: #fff; border: 1px solid var(--line); cursor: pointer; text-align: left; color: var(--text); font: inherit; }
+.vcand.first { border: 2px solid var(--amber); }
+.vcand:hover { border-color: var(--navy); }
+.vcand .ph { position: relative; height: 170px; border-radius: 10px; background: var(--photo); overflow: hidden; }
+.vcand .ph img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.vcand .rk { position: absolute; left: 8px; top: 8px; padding: 2px 8px; border-radius: 999px; background: #fff; font-weight: 700; font-size: 12px; }
+.vcand .ln { display: flex; justify-content: space-between; font-size: 13px; }
+.vcand .sc { font-weight: 700; }
+.vcand .sbar { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.vcand .sbar div { height: 100%; }
+.vcand .sbar .hi { background: var(--amber); }
+.vcand .sbar .mid { background: #9AA5BC; }
+.vcand .span { font-size: 12px; color: var(--sub); }
+.vempty { grid-column: 1 / -1; color: var(--sub); margin: 0; }
+@media (max-width: 900px) {
+  .vwrap, .vres { padding-left: 16px; padding-right: 16px; }
+  .vcard.vq, .vside { max-width: none; }
+  .vcands { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .drop { min-height: 200px; }
+}

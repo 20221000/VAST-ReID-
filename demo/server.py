@@ -148,6 +148,10 @@ def track_frame(level: str = "extreme", i: int = 1, tracker: str = "botsort-osne
 
 
 app.mount("/web", StaticFiles(directory=WEB), name="web")
+# 영상에서 찾기(브라우저 계산): ONNX 모델과 예제 영상을 공개판과 같은 경로로 제공
+for _d in ("models", "video"):
+    if (ROOT / "demo/static" / _d).is_dir():
+        app.mount(f"/{_d}", StaticFiles(directory=ROOT / "demo/static" / _d), name=_d)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", 7860)))

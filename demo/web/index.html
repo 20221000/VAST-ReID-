@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VAST-ReID 데모</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
-<link rel="stylesheet" href="web/style.css?v=wit3">
+<link rel="stylesheet" href="web/style.css?v=vid1">
+<link rel="stylesheet" href="web/video.css?v=vid1">
 </head>
 <body>
 <header>
@@ -16,6 +17,7 @@
   <nav aria-label="주요 메뉴">
     <a href="#search" data-view="search">이미지 검색</a>
     <a href="#text" data-view="text">텍스트 검색</a>
+    <a href="#video" data-view="video">영상에서 찾기</a>
     <a href="#bench" data-view="bench">벤치마크</a>
   </nav>
 </header>
@@ -236,6 +238,122 @@
   </div>
 </section>
 
-<script src="web/app.js?v=wit3"></script>
+<!-- ============ 4. 영상에서 찾기 (브라우저 계산, 서버 전송 없음) ============ -->
+<section id="view-video" class="view hidden">
+  <div class="vwrap" id="vu">
+    <div class="vhead">
+      <div>
+        <h1>CCTV 영상에서 사람 찾기</h1>
+        <p>찾을 사람의 사진과 영상을 넣으면, 영상 속에서 그 사람으로 보이는 장면을 유사도 순으로 추천합니다.</p>
+      </div>
+      <div class="vpriv"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg><span>영상과 사진은 이 기기 밖으로 전송되지 않습니다</span></div>
+    </div>
+
+    <div class="vcols">
+      <div class="panel vcard vq">
+        <h2><span class="step">1</span>찾을 사람 사진</h2>
+        <label class="drop" id="vq-drop" for="vq-file">
+          <span class="drop-empty" id="vq-empty">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"></path></svg>
+            <b>사진을 끌어 놓거나 눌러서 선택</b>
+            <span>전신이 보이는 사진 1장 · JPG, PNG<br>여러 사람이 있으면 사진 아래에서 고릅니다</span>
+          </span>
+          <span class="qprev hidden" id="vq-prev"><canvas id="vq-canvas" aria-label="찾을 사람 사진"></canvas></span>
+          <input id="vq-file" type="file" accept="image/*" class="sr">
+        </label>
+        <div class="qboxes hidden" id="vq-boxes" role="group" aria-label="사진 속 사람 선택"></div>
+        <p class="vstat" id="vq-stat" aria-live="polite"></p>
+        <div>
+          <span class="label">예제 인물로 해 보기</span>
+          <div class="vsamples" id="vq-samples"></div>
+        </div>
+      </div>
+
+      <div class="panel vcard vv">
+        <h2><span class="step">2</span>CCTV 영상</h2>
+        <label class="drop" id="vv-drop" for="vv-file">
+          <span class="drop-empty" id="vv-empty">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="14" height="12" rx="2"></rect><path d="M16 10l6-3v10l-6-3"></path></svg>
+            <b>영상을 끌어 놓거나 눌러서 선택</b>
+            <span>MP4, WebM · 3분 이하 권장<br>휴대폰으로 찍은 영상도 됩니다</span>
+          </span>
+          <video class="hidden" id="vv-prev" muted playsinline preload="metadata"></video>
+          <input id="vv-file" type="file" accept="video/*" class="sr">
+        </label>
+        <div class="vrow">
+          <button type="button" class="btn" id="vv-sample"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"></path></svg>예제 영상 사용 (저조도 거리, 0:35)</button>
+          <span class="vstat" id="vv-stat" aria-live="polite">영상이 없어도 바로 체험할 수 있습니다</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel vrun">
+      <fieldset>
+        <legend>분석 간격</legend>
+        <div class="seg" id="v-fps">
+          <label><input type="radio" name="vfps" value="1">초당 1장</label>
+          <label class="on"><input type="radio" name="vfps" value="2" checked>초당 2장</label>
+          <label><input type="radio" name="vfps" value="4">초당 4장</label>
+        </div>
+      </fieldset>
+      <div class="vest"><span class="label">분석할 프레임</span><span id="v-est">사진과 영상을 넣어 주세요</span></div>
+      <button type="button" class="btn primary" id="v-go" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F5B547" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="M20 20l-4.5-4.5"></path></svg>영상에서 찾기</button>
+      <div class="vprog hidden" id="v-prog" aria-live="polite"><div class="bar"><div id="v-bar"></div></div><span id="v-ptext"></span></div>
+    </div>
+
+    <div class="vnotes">
+      <div class="vwarn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v5"></path><path d="M12 18h.01"></path></svg>
+        <p><b>후보 추천 도구입니다.</b> 이 브라우저 모델은 실제 야간 데이터(Night600)에서 1위가 정답인 경우가 약 12%, 상위 10개 안에 정답이 있는 경우가 약 32%였습니다. 결과는 사람이 직접 확인해 주세요.</p></div>
+      <div class="vinfo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M9 9h6v6H9z"></path></svg>
+        <p><b>브라우저 모델</b> · 사람 검출 YOLO11n + 증류 OSNet(최종 CLIP 모델에서 증류), 합계 약 <span class="mono">19MB</span>. 처음 한 번 받은 뒤에는 브라우저가 저장해 둡니다. <span id="v-ep"></span></p></div>
+    </div>
+  </div>
+
+  <div class="vres hidden" id="vr">
+    <aside class="vside">
+      <section>
+        <h2 class="label">찾는 사람</h2>
+        <div class="qrow">
+          <div class="qthumb"><canvas id="vr-q" aria-label="찾는 사람 사진"></canvas></div>
+          <div class="qmeta"><span id="vr-qname"></span><span class="vstat" id="vr-qinfo"></span>
+            <button type="button" class="btn" id="vr-back1">사진 바꾸기</button></div>
+        </div>
+      </section>
+      <section class="sep">
+        <h2 class="label">분석한 영상</h2>
+        <span class="mono" id="vr-vname"></span>
+        <dl class="vdl" id="vr-dl"></dl>
+        <span class="vstat">완료 · 기기 안에서만 처리됨</span>
+      </section>
+      <section class="sep">
+        <h2 class="label">표시 기준</h2>
+        <label for="vr-thr" class="vthr"><span>최소 유사도</span><span class="mono" id="vr-thrv">0.50</span></label>
+        <input id="vr-thr" type="range" min="0" max="0.9" step="0.01" value="0.5">
+        <button type="button" class="btn primary" id="vr-back2">새 영상으로 다시 찾기</button>
+      </section>
+    </aside>
+
+    <div class="vmain">
+      <div class="vtitle">
+        <h1>이 사람으로 보이는 장면 <span id="vr-count"></span></h1>
+        <span class="vstat">유사도 높은 순 · 같은 사람이 연속으로 나온 구간은 하나로 묶음</span>
+      </div>
+      <section class="panel vplayer">
+        <div class="vscreen" id="vr-screen"><video id="vr-video" playsinline muted controls></video><canvas id="vr-overlay" aria-hidden="true"></canvas></div>
+        <div class="vtl">
+          <div class="vtrack" id="vr-tl" role="group" aria-label="후보가 나온 시점"></div>
+          <div class="vticks mono" id="vr-ticks"></div>
+        </div>
+        <div class="vlegend"><span><i class="hi"></i>유사도 상위 3</span><span><i class="mid"></i>후보</span><span><i class="other"></i>다른 사람</span></div>
+      </section>
+      <section class="vcands" id="vr-cands"></section>
+      <div class="vwarn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v5"></path><path d="M12 18h.01"></path></svg>
+        <p>유사도는 "같은 사람일 가능성"의 순위일 뿐 신원 확인이 아닙니다. 어두운 영상일수록 옷 색이 비슷한 다른 사람이 위로 올라올 수 있으니, 후보 장면을 눌러 직접 확인하세요. <span id="vr-evalnote"></span></p></div>
+    </div>
+  </div>
+</section>
+
+<script src="web/app.js?v=vid1"></script>
+<script src="web/video.js?v=vid1"></script>
 </body>
 </html>

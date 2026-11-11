@@ -1034,3 +1034,12 @@
 - `app.js`: witnessSearch(점수 + λ·일치도, λ = 검증값 또는 0.3), textSearch(parse_rules 이식), 실패 원인(_failure_causes 이식).
 - 검증: 처음엔 확률 uint8·점수 int16 양자화로 24개 중 3개가 5위 이후 순서, 텍스트 점수 일부가 달라짐 → float32로 바꾸자 무작위 40개 조합·5문장 모두 서버와 동일.
 - 버그 수정: 텍스트 검색 칩을 눌러도 지워지지 않던 문제(빈 값이 URL에서 빠져 서버에 전달 안 됨) → 제거는 "-"로 보냄. 첫 수정에서 빈 값까지 제거로 처리해 로컬 텍스트 검색이 비는 회귀가 있었고 바로 고침.
+
+### 11/11 — 영상에서 찾기 (사용자 사진·영상 업로드, 브라우저 계산)
+- 발표 평가 기준(배포 + 사용자 확보) 대응: 예제만 고르던 데모 → 사용자가 직접 사진·영상을 넣어 쓰는 기능. 서버가 없고 영상은 개인정보라 브라우저에서 계산.
+- 화면 시안: Claude Design 캔버스(claude.ai/artifact/9LSfa1uwL8RCdAg6nBQbXi) 업로드·결과 2장 → 그대로 구현(`demo/web/video.js`, `video.css`, index.html `#video`).
+- `tools/export_onnx.py`: 증류 OSNet(정규화·L2 포함) + YOLO11n(imgsz 480, NMS 포함) ONNX. ReID 코사인 0.9999997, 검출 IoU 0.93.
+- `tools/video_search_eval.py`: MOT17 3개 시퀀스 × low/extreme, 원본 해상도·트랙당 특징 수 제한 없이 측정. low Rank-1: 02 82%(11명), 04 79%(29명), 09 50%(18명). extreme: 검출이 크게 줄어(트랙 02 67→8개, 04 116→16개) 02는 쿼리로 쓸 사람 0명, 04는 4명뿐 → 병목은 검출기. 09 extreme 53%(15명).
+- `tools/build_video_sample.py`: 예제 영상(MOT17-04 low, H.264 16MB; OpenCV VP8은 68MB라 imageio-ffmpeg 사용) + 인물 4명. 브라우저와 같은 규칙(0.5초 간격, 트랙당 6장)으로 Rank-1 82.8%(29명).
+- 버그: 로컬 http.server는 Range 요청을 지원하지 않아 영상 seek가 안 되고 같은 프레임만 분석(트랙 9개) → 예제 영상은 통째로 받아 blob URL로 열도록 수정.
+- 확인: Chrome에서 WebGPU 20.6초·WASM 30.6초, 결과 동일. 여러 사람 사진에서 사람 선택, 휴대폰 폭(375px) 가로 스크롤 없음.

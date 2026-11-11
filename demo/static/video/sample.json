@@ -1,0 +1,35 @@
+{
+ "video": "sample_low.mp4",
+ "label": "저조도 거리 (MOT17-04, 합성 저조도)",
+ "duration": 35.0,
+ "people": [
+  {
+   "file": "q1.jpg",
+   "pid": 3,
+   "time": 15.6
+  },
+  {
+   "file": "q2.jpg",
+   "pid": 122,
+   "time": 8.0
+  },
+  {
+   "file": "q3.jpg",
+   "pid": 1,
+   "time": 17.4
+  },
+  {
+   "file": "q4.jpg",
+   "pid": 82,
+   "time": 13.9
+  }
+ ],
+ "eval": {
+  "n_query": 29,
+  "rank1": 0.828,
+  "rank5": 0.862,
+  "n_frames": 70,
+  "n_tracks": 90
+ },
+ "note": "쿼리는 같은 장면 주간 원본에서 자른 사진, 쿼리와 같은 순간 ±2초는 제외하고 측정"
+}
