@@ -409,6 +409,8 @@
     } catch (e) { $("#vv-stat").textContent = "예제를 불러오지 못했습니다"; $("#vv-sample").disabled = true; }
     refresh();
   };
+  // #video 주소로 바로 들어오면 app.js의 route()가 이 파일보다 먼저 실행될 수 있으므로 여기서도 초기화
+  if (location.hash === "#video") window.initVideo();
   function markSample(i) {
     $("#vq-samples").querySelectorAll("button").forEach((b) => { const on = +b.dataset.i === i; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
   }
