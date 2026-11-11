@@ -54,6 +54,13 @@
   }
 
   /* ---------- 검출·특징 ---------- */
+  // 같은 세션을 동시에 실행하면 "Session already started" 오류가 나므로(사진 분석 중 검색 시작 등) 모든 실행을 한 줄로 세운다
+  let lock = Promise.resolve();
+  function runModel(sess, feeds) {
+    const p = lock.then(() => sess.run(feeds));
+    lock = p.catch(() => {});
+    return p;
+  }
   async function detect(src, w, h) {
     const s = IMGSZ / Math.max(w, h), nw = Math.round(w * s), nh = Math.round(h * s);
     const c = canvas(IMGSZ, IMGSZ), g = c.getContext("2d", { willReadFrequently: true });
@@ -61,7 +68,7 @@
     g.drawImage(src, 0, 0, w, h, 0, 0, nw, nh);
     const d = g.getImageData(0, 0, IMGSZ, IMGSZ).data, n = IMGSZ * IMGSZ, x = new Float32Array(3 * n);
     for (let i = 0; i < n; i++) { x[i] = d[4 * i] / 255; x[n + i] = d[4 * i + 1] / 255; x[2 * n + i] = d[4 * i + 2] / 255; }
-    const out = await V.det.run({ [V.det.inputNames[0]]: new ort.Tensor("float32", x, [1, 3, IMGSZ, IMGSZ]) });
+    const out = await runModel(V.det, { [V.det.inputNames[0]]: new ort.Tensor("float32", x, [1, 3, IMGSZ, IMGSZ]) });
     const o = out[V.det.outputNames[0]].data, boxes = [];
     for (let i = 0; i < o.length; i += 6) {
       if (o[i + 4] < CONF || Math.round(o[i + 5]) !== 0) continue;
@@ -83,7 +90,7 @@
         const d = g.getImageData(0, 0, 128, 256).data, o = k * 3 * P;
         for (let i = 0; i < P; i++) { x[o + i] = d[4 * i] / 255; x[o + P + i] = d[4 * i + 1] / 255; x[o + 2 * P + i] = d[4 * i + 2] / 255; }
       });
-      const r = await V.reid.run({ [V.reid.inputNames[0]]: new ort.Tensor("float32", x, [n, 3, 256, 128]) });
+      const r = await runModel(V.reid, { [V.reid.inputNames[0]]: new ort.Tensor("float32", x, [n, 3, 256, 128]) });
       const f = r[V.reid.outputNames[0]].data;
       for (let k = 0; k < n; k++) out.push(f.slice(k * 512, (k + 1) * 512));
     }
@@ -111,7 +118,7 @@
     const s = Math.min(1, 1280 / Math.max(im.naturalWidth, im.naturalHeight));
     const c = canvas(Math.round(im.naturalWidth * s), Math.round(im.naturalHeight * s));
     c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
-    V.q = { name, img: c, boxes: [], sel: -1 };
+    V.q = { name, img: c, boxes: [], sel: -1, busy: true };
     $("#vq-empty").classList.add("hidden"); $("#vq-prev").classList.remove("hidden");
     drawQuery();
     $("#vq-stat").textContent = "사진 속 사람을 찾는 중…";
@@ -131,6 +138,7 @@
       $("#vq-stat").textContent = big || !boxes.length ? "사진 전체를 찾을 사람으로 사용합니다" :
         boxes.length === 1 ? "사람 1명 검출됨" : `사람 ${boxes.length}명 검출됨 · 아래에서 찾을 사람을 고르세요`;
     } catch (e) { $("#vq-stat").textContent = `오류: ${e.message}`; }
+    if (V.q) V.q.busy = false;
     refresh();
   }
   function drawQuery(target = $("#vq-canvas")) {
@@ -182,7 +190,7 @@
 
   function nFrames() { return V.video ? Math.max(1, Math.floor(V.video.duration * V.fps)) : 0; }
   function refresh() {
-    const ok = V.q && V.video && !V.busy;
+    const ok = V.q && !V.q.busy && V.video && !V.busy;  // 사진 속 사람 검출이 끝난 뒤에 검색
     $("#v-go").disabled = !ok;
     $("#v-est").textContent = V.video ? `${nFrames()}장 · ${mmss(V.video.duration)} 영상, 초당 ${V.fps}장` : "사진과 영상을 넣어 주세요";
   }
